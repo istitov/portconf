@@ -1,14 +1,16 @@
 #!/bin/bash
 # Copyright megabaks
 # Distributed under the terms of the GNU General Public License v3 or later
-set -euo pipefail
 ############################################################################
 ################ portage functions #########################################
+# Source Gentoo helpers before strict mode: functions.sh uses ${KSH_VERSION}
+# without a default and is not set -u-safe.
 if [[ -f "/lib/gentoo/functions.sh" ]]; then
 	source /lib/gentoo/functions.sh
 else
 	source /usr/lib*/portage/bin/isolated-functions.sh
 fi
+set -euo pipefail
 ############################################################################
 ################ colors ####################################################
 green="\033[01;32m"
@@ -19,7 +21,7 @@ underline="\033[4m"
 ############################################################################
 ################ cleanup ###################################################
 _tmpfiles=()
-_cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; }
+_cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; :; }
 trap _cleanup EXIT
 
 _mktemp() {
@@ -39,6 +41,9 @@ ARCH="$(eix --print DEFAULT_ARCH)"
 yes=""
 PRETEND=""
 eix_cache=""
+IGNORE_CATEGORY=""
+IGNORE_PN=""
+COUNT=""
 [[ -f "/etc/portconf.conf" ]] && . /etc/portconf.conf
 COUNT="${COUNT:-10}"
 ############################################################################
@@ -52,6 +57,7 @@ IGNORE="${IGNORE:-'Hello, LOR! :3'}"
 ############################################################################
 ################ sort_passed_uses ##########################################
 sort_passed_uses(){
+	uses=""
 	for opt in ${1};do
 		opt="${opt//\*/\\*}"
 		uses="$(tr "[:space:]" $'\n' <<< "${uses}" | grep -v -e "^${opt#-}$" -e "^\-${opt#-}$" | tr $'\n' " " || true)"
@@ -64,9 +70,15 @@ sort_passed_uses(){
 ############################################################################
 ################ profile ###################################################
 profile() {
-	local use path
-	[[ -f "${1}/make.defaults" ]] && . "${1}/make.defaults"
-	use="$USE"
+	local use path USE=""
+	# Profile make.defaults files reference vars from parent profiles that
+	# may not be set yet; source them without set -u to avoid false errors.
+	if [[ -f "${1}/make.defaults" ]]; then
+		set +u
+		. "${1}/make.defaults"
+		set -u
+	fi
+	use="${USE}"
 	if [[ -f "${1}/parent" ]]; then
 		for path in `cat ${1}/parent`;do
 			use="$use $(profile "${1}/$path")"
@@ -119,8 +131,12 @@ current_profile(){
 makefile=""
 [[ -f "/etc/make.conf" ]] && makefile="/etc/make.conf"
 [[ -f "${PORT_ETC}/make.conf" ]] && makefile="${PORT_ETC}/make.conf"
-[[ -n "${makefile}" ]] && . "${makefile}" 2>/dev/null
-MAKE_USES="${USE}"
+# make.conf may contain self-referencing expansions (FEATURES+=${FEATURES})
+# that are not set -u-safe; source it without strict mode.
+if [[ -n "${makefile}" ]]; then
+	set +u; . "${makefile}" 2>/dev/null; set -u
+fi
+MAKE_USES="${USE:-}"
 unset USE
 PORTDIR="${PORTDIR:-/usr/portage}"
 ############################################################################
@@ -416,7 +432,11 @@ file_or_dir(){
 			file="${target}"
 			if [[ -s "${file}" ]];then
 				echo -e "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
-				${3};${4};${5};${6};${7};
+				local _fn
+				for _fn in "${3}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"; do
+					[[ -n "${_fn}" ]] || continue
+					eval "${_fn}"
+				done
 			else
 				echo -e "${underline}Empty file${restore} ${contrast}${file}${restore}"
 				remove_ask "${file}"
@@ -427,7 +447,10 @@ file_or_dir(){
 				file="${f}"
 				if [[ -s "${file}" ]];then
 					echo -e "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
-					${3};${4};${5};${6};${7};
+					local _fn
+					for _fn in "${3}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"; do
+						[[ -n "${_fn}" ]] && eval "${_fn}"
+					done
 				else
 					echo -e "${underline}Empty file${restore} ${contrast}${file}${restore}"
 					remove_ask "${file}"
@@ -1852,6 +1875,9 @@ eix_dep_keys="--use-invalid
 -ft
 --full
 -f"
+# Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
+# to get function definitions without executing the command dispatch.
+if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
 opts=" ${PORTCONF_DEFAULT_OPTS:-} ${@}"
 grep -q -e " \--yes\>" -e " \-y\>" <<< " ${opts}" && yes="1"
 grep -q -e " \--pretend\>" -e " \-p\>" <<< " ${opts}" && PRETEND="1"
@@ -1977,3 +2003,4 @@ for OPT in ${opts};do
 	--help | -h | -? | h ) help_pc;;
 	esac
 done
+fi # PORTCONF_NO_MAIN / sourcing guard
