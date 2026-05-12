@@ -116,9 +116,10 @@ current_profile(){
 }
 ############################################################################
 ################ make.conf #################################################
+makefile=""
 [[ -f "/etc/make.conf" ]] && makefile="/etc/make.conf"
 [[ -f "${PORT_ETC}/make.conf" ]] && makefile="${PORT_ETC}/make.conf"
-. "${makefile}" 2>/dev/null
+[[ -n "${makefile}" ]] && . "${makefile}" 2>/dev/null
 MAKE_USES="${USE}"
 unset USE
 PORTDIR="${PORTDIR:-/usr/portage}"
@@ -331,13 +332,11 @@ diff_ask(){
 							exit 1
 						fi
 						unset full_diff
-						return 0
-						break;;
+						return 0;;
 					No | NO | no | N | n )
 						unset full_diff
 						rm "${2}" 2>/dev/null
-						return 0
-						break;;
+						return 0;;
 					* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
 				esac
@@ -351,7 +350,6 @@ diff_ask(){
 			unset full_diff
 			rm "${2}" 2>/dev/null
 			return 0
-			break
 		fi
 	fi
 	rm "${2}" 2>/dev/null
@@ -632,7 +630,6 @@ installed(){
 		installed_slots="$(awk -F \: '{print $2}' <<< "${installed}")"
 		#::repo check
 		full_vers="$(qlist -ICev "${category}/${pn}" | sed "s|${category}/${pn}-||g")"
-		(( "$(wc -l <<< "${full_vers}")" '>' "1" ))
 		if [[ -n "${defined_repo}" ]];then
 			for ver in ${full_vers};do
 				all_vers+=" ${PKGDB}/${category}/${pn}-${ver}/repository"
@@ -663,7 +660,7 @@ not_if(){
 
 				[[ "${category}" == "(null)" || "${pn}" == "(null)" ]] && continue
 
-				if [[ -n "${rev}" ]] && [[ -z "${slot}" ]] && `grep -q \: <<< "${rev}"`;then
+				if [[ -n "${rev}" ]] && [[ -z "${slot}" ]] && grep -q \: <<< "${rev}";then
 					slot="${rev}"
 					unset rev
 				fi
@@ -690,7 +687,7 @@ force_not_installed(){
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}" || true)" ]];then
 			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
-			if ! `grep -q "\.mask" <<< "${package}"`;then
+			if ! grep -q "\.mask" <<< "${package}";then
 				not_if;
 				eend $? 2>/dev/null
 			fi
@@ -781,7 +778,7 @@ env_not_installed(){
 			while read category pn ver rev slot;do
 				[[ "${category}" == "(null)" || "${pn}" == "(null)" ]] && continue
 				[[ "${ver}" == "(null)" ]] && ver="${ver//(null)/}"
-				if [[ -n "${rev}" ]] && ! `grep -q \: <<< "${rev}"`;then
+				if [[ -n "${rev}" ]] && ! grep -q \: <<< "${rev}";then
 					full_ver="${ver}-${rev}"
 				else
 					full_ver="${ver}"
@@ -816,6 +813,7 @@ env_not_installed(){
 			done <<< "${atom}"
 		done <<< "${files}"
 
+		_save_ifs="${IFS:-}"
 		IFS="%"
 		for target in ${RM%\%};do
 			remove_ask "${target}"
@@ -824,7 +822,8 @@ env_not_installed(){
 		for target in ${dirs};do
 			[[ -z "`ls ${target}`" ]] && remove_ask "${target}"
 		done
-	unset IFS
+		IFS="${_save_ifs}"
+		unset _save_ifs
 	done
 	eend $? 2>/dev/null
 }
@@ -847,6 +846,32 @@ invalid_uses(){
 		export FORMAT='<availableversions:USEONLY>'
 		export USEONLY=' <colliuse>'
 		#### just count
+		prepare(){
+			while read string;do
+				struse="${string#${category}/${pn}}"
+				struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
+				usefxd="$(sed -e "s|^${trash#-}$||" -e "s|^\-${trash#-}$||" -e '/^$/d' <<< "${struse}")"
+				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
+				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
+				strfxd="${category}/${pn} ${usefxd}"
+				sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
+				eend $? 2>/dev/null
+			done <<< "${strings}"
+		}
+
+		prepare_similar(){
+			while read string;do
+				struse="${string#${category}/${pn}}"
+				struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
+				usefxd="$(sed -e "s|^${use#-}$|${similar_use}|" -e "s|^\-${use#-}$|\-${similar_use}|" -e '/^$/d' <<< "${struse}")"
+				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
+				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
+				strfxd="${category}/${pn} ${usefxd}"
+				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
+				eend $? 2>/dev/null
+			done <<< "${strings}"
+		}
+
 		tput sc
 		tput civis
 		while read category pn ver slot;do
@@ -854,31 +879,6 @@ invalid_uses(){
 			tput el1
 			echo -ne "["; printf "% ${chars}d" $((count--));echo -ne " ]" "atoms left" 2>/dev/null
 			tput rc
-			prepare(){
-				while read string;do
-					struse="${string#${category}/${pn}}"
-					struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
-					usefxd="$(sed -e "s|^${trash#-}$||" -e "s|^\-${trash#-}$||" -e '/^$/d' <<< "${struse}")"
-					usefxd="$(tr $'\n' " " <<< "${usefxd}")"
-					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
-					strfxd="${category}/${pn} ${usefxd}"
-					sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
-					eend $? 2>/dev/null
-				done <<< "${strings}"
-			}
-
-			prepare_similar(){
-				while read string;do
-					struse="${string#${category}/${pn}}"
-					struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
-					usefxd="$(sed -e "s|^${use#-}$|${similar_use}|" -e "s|^\-${use#-}$|\-${similar_use}|" -e '/^$/d' <<< "${struse}")"
-					usefxd="$(tr $'\n' " " <<< "${usefxd}")"
-					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
-					strfxd="${category}/${pn} ${usefxd}"
-					sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
-					eend $? 2>/dev/null
-				done <<< "${strings}"
-			}
 
 			ALL_USE=" $(eix -e "${category}/${pn}")" || continue
 			ALL_USE="$(sed -e 's| +| |g;s| -| |g;s|(+)||g;s|(-)||g' <<< "${ALL_USE}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
@@ -889,10 +889,10 @@ invalid_uses(){
 					for agrep_opt in 1 2 3 B;do
 						for use_opt in "${use}" "^${use}" "${use}$" "^${use}$";do
 							similar_use="$(agrep -${agrep_opt} "${use_opt}" 2>/dev/null <<< "${ALL_USE}" || true)"
-							[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") '==' 1 )) && break
+							[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
 						done
-						[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") '==' 1 )) && break
-						[[ -z "${similar_use}" ]] || (( $(wc -l <<< "${similar_use}") '>' 1 )) && similar_use=""
+						[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
+						[[ -z "${similar_use}" ]] || (( $(wc -l <<< "${similar_use}") > 1 )) && similar_use=""
 					done
 					if [[ -z "${similar_use}" ]];then
 						grep -q " ${use}\>" <<< "${incorrect_use}" || incorrect_use="${incorrect_use} ${use}"
@@ -1063,7 +1063,7 @@ not_found(){
 			diff_ask "${package}" "${tmp_package}"
 		elif [[ -n "${incorrect}" && -d "${package}" ]];then
 			echo -e "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
-			IFS=$'\n'
+			_save_ifs="${IFS:-}"; IFS=$'\n'
 			for line in ${incorrect};do
 				for file in `grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}'`;do
 					tmp_file="$(_mktemp)"
@@ -1074,13 +1074,13 @@ not_found(){
 					eend $? 2>/dev/null
 				done
 			done
-			unset IFS
+			IFS="${_save_ifs}"; unset _save_ifs
 		fi
 	done
 
 	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
 
-	IFS=$'\n'
+	_save_ifs="${IFS:-}"; IFS=$'\n'
 	for string in ${INVALID};do
 		[[ -z "${string}" ]] && break
 		file="$(awk -F ':' '{print $1}' <<< "${string}")"
@@ -1111,7 +1111,7 @@ not_found(){
 		fi
 		eend $? 2>/dev/null
 	done
-	unset IFS
+	IFS="${_save_ifs}"; unset _save_ifs
 
 	##### don't quote it! #####
 	if [[ -n "${INVALID_FOUNDED}" ]];then
@@ -1412,7 +1412,7 @@ stupid_unmask(){
 ################ stupid mask/unmask uses ###################################
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
-		for package in `find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' -name "use.stable.mask" -or -name "use.mask"`;do
+		for package in `find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \)`;do
 			tmp_sort="$(_mktemp)"
 			echo -e "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
