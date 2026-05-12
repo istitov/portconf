@@ -1,0 +1,22 @@
+2026-05-12  Ivan Titov  <iohann.s.titov@gmail.com>
+
+	Revival: 2.0.0 — "Back From 2014"
+
+	First versioned release of the maintained fork. The original script
+	by megabaks (https://github.com/megabaks/portconf) was last updated
+	in March 2014; this release picks it up as-is and adds the
+	infrastructure needed for ongoing maintenance.
+
+	* configure.ac, Makefile.am, src/Makefile.am, man/Makefile.am:
+	  New autotools build system.  `./configure && make && make install`
+	  installs portconf to $(bindir) and portconf.conf to $(sysconfdir).
+	* src/portconf.in: Script moved here; PACKAGE_VERSION substituted at
+	  build time.  Added --version / -V flag.
+	* man/portconf.1: New man page covering all flags, configuration, and
+	  dependencies.
+	* AUTHORS: megabaks as original author; istitov as maintainer.
+	* INSTALL: Gentoo-specific installation notes.
+
+	AI disclosure: build system, man page, and metadata files in this
+	release were authored with AI assistance (Claude, Anthropic).  The
+	portconf script itself is unchanged from megabaks's original.

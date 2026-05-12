@@ -1,0 +1,191 @@
+.TH PORTCONF 1 "2026-05-12" "portconf 2\.0\.0" "Gentoo Utilities"
+.SH NAME
+portconf \- /etc/portage configuration cleaner and manager
+.SH SYNOPSIS
+.B portconf
+[\fIOPTION\fR]...
+.SH DESCRIPTION
+.B portconf
+automatically detects and cleans up configuration issues in
+.IR /etc/portage .
+It handles USE flags, keywords, package atoms, backups, overlays, and the world file.
+.PP
+Operations that modify
+.I /etc/portage
+automatically create a timestamped backup beforehand.
+Up to
+.B COUNT
+(default 10) backups are retained.
+.SH OPTIONS
+.SS Common
+.TP
+.BR \-rc ", " \-\-regen\-cache
+Create and use a temporary eix cache, and fix overlay issues.
+Highly recommended when running USE or trash operations.
+.TP
+.BR \-b ", " \-\-backup
+Create a backup of the current
+.I /etc/portage
+state.
+.TP
+.BR \-r ", " \-\-restore
+Roll
+.I /etc/portage
+back to a previously saved state.
+.TP
+.BR \-s ", " \-\-sort
+Sort entries alphabetically; equivalent to
+.B \-\-use\-sort \-\-keyword\-uniq.
+.TP
+.BR \-y ", " \-\-yes
+Answer yes to all interactive prompts.
+.TP
+.BR \-p ", " \-\-pretend
+Check only; make no changes.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.TP
+.BR \-h ", " \-\-help
+Show usage summary.
+.SS USE flags
+.TP
+.BR \-us ", " \-\-use\-sort
+Sort USE flags; remove duplicates, preserving the last defined state (on/off).
+.TP
+.BR \-ui ", " \-\-use\-invalid
+Remove invalid or redundantly global-defined USE flags.
+.TP
+.BR \-um ", " \-\-use\-make
+Remove profile-defined USE flags from
+.IR make.conf .
+.TP
+.BR \-sup ", " \-\-stupid\-use\-profile
+Remove incorrect or duplicate masked/unmasked USE flags.
+.TP
+.BR \-uf ", " \-\-use\-full
+Equivalent to
+.BR "\-us \-ui \-um \-sup" .
+.SS Keywords
+.TP
+.BR \-ku ", " \-\-keyword\-uniq
+Sort and deduplicate
+.I package.keywords
+entries.
+.TP
+.BR \-ko ", " \-\-keyword\-one
+Keep only the latest defined keyword per atom.
+.SS Trash
+.TP
+.BR \-t ", " \-\-trash
+Remove not-found/not-installed atoms, empty files, backup files, and unused configs.
+.TP
+.BR \-ft ", " \-\-force\-trash
+Remove all not-installed atoms (excludes
+.IR package.mask ).
+.TP
+.BR \-sm ", " \-\-stupid\-mask
+Remove incorrect masked atoms.
+.TP
+.BR \-sum ", " \-\-stupid\-unmask
+Remove incorrect unmasked atoms.
+.TP
+.BR \-c ", " \-\-rm\-comments
+Delete lines starting with
+.BR # .
+.TP
+.BR \-ac ", " \-\-rm\-all\-comments
+Delete all comments, including inline ones.
+.TP
+.BR \-f ", " \-\-full
+Equivalent to
+.BR "\-s \-t \-uf \-ku \-sm \-sum" .
+.SS Converting
+.TP
+.BR \-f2d ", " \-\-files\-2\-dirs
+Convert
+.I package.*
+flat files to per-package directories (comments removed).
+.TP
+.BR \-d2f ", " \-\-dirs\-2\-files
+Convert
+.I package.*
+per-package directories back to flat files.
+.SS Profile
+.TP
+.BR \-apu ", " \-\-all\-profiles\-use
+List USE flags defined across all profiles.
+.TP
+.BR \-pu ", " \-\-profiles\-use
+List USE flags of the current profile tree.
+.TP
+.BR \-cpu ", " \-\-current\-profile\-use
+List USE flags of the active profile.
+.SS World
+.TP
+.BR \-wb ", " \-\-world\-backup
+Back up the current world file.
+.TP
+.BR \-wr ", " \-\-world\-restore
+Roll the world file back to a saved state.
+.TP
+.BR \-wg ", " \-\-world\-regen
+Regenerate (clean up) the world file; backup is automatic.
+.SS Overlays
+.TP
+.BR \-fr ", " \-\-fix\-repos
+Remove unused overlays and stale dependency cache entries.
+.SH CONFIGURATION
+Configuration is read from
+.I /etc/portconf.conf
+if it exists.  Available settings:
+.TP
+.B COUNT
+Number of backups to retain (default: 10).
+.TP
+.B IGNORE_CATEGORY
+Space-separated list of categories to skip (shell glob patterns accepted).
+.TP
+.B IGNORE_PN
+Space-separated list of package names to skip.
+.TP
+.B PORTCONF_DEFAULT_OPTS
+Default options prepended to every invocation (default:
+.BR \-rc ).
+.SH FILES
+.TP
+.I /etc/portconf.conf
+Site-wide configuration file.
+.TP
+.I /etc/portage/
+Portage configuration directory managed by portconf.
+.TP
+.I /var/lib/portconf/
+Directory where timestamped backups are stored.
+.SH DEPENDENCIES
+.B portconf
+requires
+.BR bash (1),
+.BR eix (1),
+.BR qlist (1),
+.BR qatom (1),
+.BR emerge (1),
+and
+.BR eselect (1).
+.SH AUTHORS
+.B portconf
+was written by megabaks.
+.PP
+It is currently maintained by Ivan Titov <iohann.s.titov@gmail.com>.
+.SH REPORTING BUGS
+Report bugs at <https://github.com/istitov/portconf/issues>.
+.SH COPYRIGHT
+Copyright \(co megabaks.
+.br
+Copyright \(co 2026 Ivan Titov.
+.br
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+.SH SEE ALSO
+.BR emerge (1),
+.BR eix (1),
+.BR portage (5)

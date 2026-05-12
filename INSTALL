@@ -1,0 +1,44 @@
+Installing portconf
+===================
+
+Gentoo (recommended)
+--------------------
+Install from the ::stuff overlay:
+
+    emerge app-portage/portconf
+
+This is the only supported installation method for production Gentoo systems.
+The ebuild handles the correct install paths and dependencies automatically.
+
+
+From source (manual)
+--------------------
+Requirements: autoconf >= 2.69, automake >= 1.13, bash, sed.
+
+    autoreconf -i          # only needed from a git checkout
+    ./configure
+    make
+    doas make install      # installs to /usr/local by default
+
+To install system-wide (matching the ebuild layout):
+
+    ./configure --prefix=/usr --sysconfdir=/etc
+    make
+    doas make install
+
+
+Runtime dependencies
+--------------------
+portconf requires the following tools at runtime:
+
+    app-portage/eix
+    app-portage/portage-utils   (qlist, qatom)
+    sys-apps/portage            (emerge, eselect)
+
+The -rc / --regen-cache option (strongly recommended) also requires eix-update.
+
+
+Configuration
+-------------
+A sample configuration file is installed to /etc/portconf.conf.
+Uncomment and adjust the settings as needed.  The defaults are safe.

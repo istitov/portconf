@@ -1,0 +1,24 @@
+# autotools generated
+/aclocal.m4
+/autom4te.cache/
+/config.log
+/config.status
+/configure
+/install-sh
+/missing
+/Makefile
+/Makefile.in
+/src/Makefile
+/src/Makefile.in
+/src/portconf
+/man/Makefile
+/man/Makefile.in
+
+# dist tarballs
+/*.tar.*
+/*.tar
+
+# editor
+*~
+*.swp
+*.swo
