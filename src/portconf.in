@@ -16,6 +16,18 @@ restore="\033[00m"
 contrast="\033[1m"
 underline="\033[4m"
 ############################################################################
+################ cleanup ###################################################
+_tmpfiles=()
+_cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; }
+trap _cleanup EXIT
+
+_mktemp() {
+	local f
+	f="$(mktemp "$@")"
+	_tmpfiles+=("$f")
+	printf '%s\n' "$f"
+}
+############################################################################
 ################ init ######################################################
 PACKAGE_VERSION="@PACKAGE_VERSION@"
 PKGDB="/var/db/pkg"
@@ -144,7 +156,7 @@ eix_check(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		echo -e "${underline}Creating new temporary cache.${restore}"
 		repo_fix
-		eix_cache="$(mktemp)"
+		eix_cache="$(_mktemp)"
 		chown portage:portage "${eix_cache}" 2>/dev/null
 		export EIX_CACHEFILE="${eix_cache}"
 		export OVERLAY_CACHE_METHOD="parse|ebuild*"
@@ -369,7 +381,7 @@ remove_ask(){
 ################ sort_packages #############################################
 sort_uniq_files(){
 	for package in `find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\."`;do
-		tmp_sort="$(mktemp)"
+		tmp_sort="$(_mktemp)"
 		echo -e "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
 		all_atoms="$(awk '{print $1}' "${package}" | grep -v "^#"| sort -u)"
@@ -427,7 +439,7 @@ file_or_dir(){
 ################ rm_comments ###############################################
 rm_comments(){
 	no_newline(){
-		tmp_file="$(mktemp)"
+		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		sed -e "s|^#.*||g" -e '/^$/d' -i ${tmp_file}
 		diff_ask "${file}" "${tmp_file}"
@@ -439,7 +451,7 @@ rm_comments(){
 ################ rm_all_comments ###########################################
 rm_all_comments(){
 	no_newline_inline(){
-		tmp_file="$(mktemp)"
+		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		sed -e "s|#.*||g" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
 		diff_ask "${file}" "${tmp_file}"
@@ -450,8 +462,8 @@ rm_all_comments(){
 ############################################################################
 ################ sort_uses #################################################
 sort_uses(){
-	tmp_file="$(mktemp)"
-	striped="$(mktemp)"
+	tmp_file="$(_mktemp)"
+	striped="$(_mktemp)"
 	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2-)"
@@ -534,8 +546,8 @@ stupid_keywords(){
 ############################################################################
 ################ sort_keys #################################################
 sort_keys(){
-	tmp_file="$(mktemp)"
-	striped="$(mktemp)"
+	tmp_file="$(_mktemp)"
+	striped="$(_mktemp)"
 	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2-)"
@@ -572,8 +584,8 @@ sort_keys(){
 ################ one_keyword ###############################################
 sort_keywords(){
 	keys(){
-		tmp_file="$(mktemp)"
-		striped="$(mktemp)"
+		tmp_file="$(_mktemp)"
+		striped="$(_mktemp)"
 		atoms="$(awk '{print $1}' "${file}" | sort -u)"
 		while read atom;do
 			comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2-)"
@@ -668,7 +680,7 @@ not_if(){
 force_not_installed(){
 	for package in `find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak'`;do
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}")" ]];then
-			tmp_package="$(mktemp)"
+			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
 			if ! `grep -q "\.mask" <<< "${package}"`;then
 				not_if;
@@ -719,7 +731,7 @@ package_env_conf(){
 ################ package.env ###############################################
 package_env(){
 	package_env_def(){
-		tmp_file="$(mktemp)"
+		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		while read line;do
 			xline="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
@@ -927,7 +939,7 @@ invalid_uses(){
 	}
 	if [[ -f "${PORT_ETC}/package.use" ]];then
 		file="${PORT_ETC}/package.use"
-		tmp_file="$(mktemp)"
+		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		if [[ -n "${IGNORE}" ]];then
 			content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}")"
@@ -948,7 +960,7 @@ invalid_uses(){
 		for f in `find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak'`;do
 			if [[ -s "${f}" ]];then
 				file="${f}"
-				tmp_file="$(mktemp)"
+				tmp_file="$(_mktemp)"
 				cp "${file}" "${tmp_file}"
 				if [[ -n "${IGNORE}" ]];then
 					content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}")"
@@ -991,7 +1003,7 @@ hell_parser(){
 invalid_uses_make(){
 	set -f
 	echo -e "${underline}Checking use flags in${restore} ${contrast}${makefile}${restore}"
-	tmp_file="$(mktemp)"
+	tmp_file="$(_mktemp)"
 	cp "${makefile}" "${tmp_file}"
 
 	vars_in_USE="$(make_conf_use USE | hell_parser | grep '\$' | tr -d '${}')"
@@ -1025,7 +1037,7 @@ not_found(){
 		incorrect="$(echo -e "${TRASH}" | tr $'\n' "%" | sed -e "s|.*${package}:||" -e 's|--.*||' -e 's|No.*||'|\
 		tr "%" $'\n' | sed -e '/^$/d' | grep -v "${IGNORE}")"
 		if [[ -n "${incorrect}" && -f "${package}" ]];then
-			tmp_package="$(mktemp)"
+			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
 			echo -e "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
 			while read line;do
@@ -1040,7 +1052,7 @@ not_found(){
 			IFS=$'\n'
 			for line in ${incorrect};do
 				for file in `grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}'`;do
-					tmp_file="$(mktemp)"
+					tmp_file="$(_mktemp)"
 					cp "${file}" "${tmp_file}"
 					echo -e "${red}Incorrect:${restore} ${line}"
 					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
@@ -1069,13 +1081,13 @@ not_found(){
 		INVALID_FOUNDED+="${line}"$'\n'
 
 		if [[ -n "${line}" && -f "${file}" ]];then
-			tmp_file="$(mktemp)"
+			tmp_file="$(_mktemp)"
 			cp "${file}" "${tmp_file}"
 			[[ -n "${line}" ]] && sed -e "s|`echo $line`$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
 			for package in `grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}'`;do
-					tmp_package="$(mktemp)"
+					tmp_package="$(_mktemp)"
 					cp "${package}" "${tmp_package}"
 					echo -e "${red}Incorrect:${restore} ${line}"
 					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package}
@@ -1096,7 +1108,7 @@ not_found(){
 	fi
 	broken_files="$(awk '{print $1}' <<< "${invalid}" | sort -u)"
 	invalid_lines(){
-		tmp_file="$(mktemp)"
+		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		set -f
 		tlines="$(grep "^${file} " <<< "${invalid}" | sed "s|${file} ||g")"
@@ -1119,7 +1131,7 @@ use_makeconf(){
 	echo -e "${underline}Checking use flags in${restore} ${contrast}${makefile##/etc*/}${restore}"
 	USE="$(echo -e "${MAKE_USES}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
 
-	tmp_file="$(mktemp)"
+	tmp_file="$(_mktemp)"
 	cp "${makefile}" "${tmp_file}"
 	while read use;do
 		flag="${use#-}"
@@ -1160,7 +1172,7 @@ f_to_d(){
 	while read package;do
 		if [[ -f "${package}" ]];then
 			echo -e "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
-			tmp_file="$(mktemp)"
+			tmp_file="$(_mktemp)"
 			mv ${package} ${tmp_file} 2>/dev/null
 			sed -e 's|^#.*||g' -i "${tmp_file}"
 			dir="${PORT_ETC}/${package##*/}"
@@ -1190,7 +1202,7 @@ d_to_f(){
 	while read package;do
 		if [[ -d "${package}" ]];then
 			echo -e "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
-			tmp_file="$(mktemp)"
+			tmp_file="$(_mktemp)"
 			file="${PORT_ETC}/${package##*/}"
 			touch "${file}"
 			for subfile in `find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort`;do
@@ -1334,7 +1346,7 @@ mask_trash(){
 	files="$(awk '{print $1}' <<< "${TRASH}" | sort -u | sed '/^$/d')"
 	for target in ${files};do
 		if [[ -f "${target}" ]];then
-			tmp_file="$(mktemp)"
+			tmp_file="$(_mktemp)"
 			cp "${target}" "${tmp_file}"
 			incorrect="$(grep ${target} <<< "${TRASH}" | sed -e "s|${target} ||g")"
 			for trash_atom in ${incorrect};do
@@ -1348,7 +1360,7 @@ mask_trash(){
 ############################################################################
 ################ looking trash #############################################
 remove_trash(){
-	tmp_file="$(mktemp)"
+	tmp_file="$(_mktemp)"
 	cp "${file}" "${tmp_file}"
 	for atom in `eix -Tc#`;do
 		lines="$(grep "${atom}" "${file}")"
@@ -1385,7 +1397,7 @@ stupid_unmask(){
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
 		for package in `find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' -name "use.stable.mask" -or -name "use.mask"`;do
-			tmp_sort="$(mktemp)"
+			tmp_sort="$(_mktemp)"
 			echo -e "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
 			masked_uses="$(grep -v "^#" "${package}")"
@@ -1433,7 +1445,7 @@ etc_profile_use_mask() {
 	else
 		return 1
 	fi
-	tmp_file="$(mktemp)"
+	tmp_file="$(_mktemp)"
 	cp "${orig_file}" "${tmp_file}"
 	while read use;do
 		if grep -q "^${use/-/\-}$" <<< "$(use_mask)";then
@@ -1462,9 +1474,9 @@ check_use_masked() {
 ############################################################################
 ################ regen_world ###############################################
 regen_world(){
-	tmp_world="$(mktemp)"
-	ex_world="$(mktemp)"
-	emerge_log="$(mktemp)"
+	tmp_world="$(_mktemp)"
+	ex_world="$(_mktemp)"
+	emerge_log="$(_mktemp)"
 	mv "${WORLD}" "${ex_world}"
 	installed="$(qlist -CI | sort -u)"
 	echo "${installed}" > "${WORLD}"
