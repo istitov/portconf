@@ -54,8 +54,8 @@ IGNORE="${IGNORE:-'Hello, LOR! :3'}"
 sort_passed_uses(){
 	for opt in ${1};do
 		opt="${opt//\*/\\*}"
-		uses="$(tr "[:space:]" $'\n' <<< ${uses} | grep -v -e "^${opt#-}$" -e "^\-${opt#-}$" | tr $'\n' " " || true)"
-		uses+=" $(tr "[:space:]" $'\n' <<< ${1} | grep -e "^${opt#-}$" -e "^\-${opt#-}$" | tail -n1 || true)"
+		uses="$(tr "[:space:]" $'\n' <<< "${uses}" | grep -v -e "^${opt#-}$" -e "^\-${opt#-}$" | tr $'\n' " " || true)"
+		uses+=" $(tr "[:space:]" $'\n' <<< "${1}" | grep -e "^${opt#-}$" -e "^\-${opt#-}$" | tail -n1 || true)"
 		unset opt
 	done
 	echo ${uses}
@@ -78,7 +78,7 @@ profile() {
 [[ -h "/etc/make.profile" ]] && pre_profile="$(profile `readlink -f /etc/make.profile`)"
 [[ -h "/etc/portage/make.profile" ]] && pre_profile="$(profile `readlink -f /etc/portage/make.profile`)"
 profile_uses="$(sort_passed_uses "${pre_profile}")"
-PROFILE="$(tr "[:space:]" $'\n' <<< ${profile_uses})"
+PROFILE="$(tr "[:space:]" $'\n' <<< "${profile_uses}")"
 ############################################################################
 ################ all_use_all_profiles ######################################
 all_use_all_profiles(){
@@ -250,7 +250,7 @@ world_backup(){
 		fi
 		echo -e "world backup: ${green}creating${restore}..."
 		name="${world_dir}/world_$(date +%g.%m.%d-%H:%M).tar.bz2"
-		tar -jcf "${name}" -C ${WORLD%world} world
+		tar -jcf "${name}" -C "${WORLD%world}" world
 		eend $? 2>/dev/null
 	else
 		echo -e "world backups: ${green}already up-to-date${restore}"
@@ -268,8 +268,8 @@ restore(){
 	echo -e "${contrast}Available backups${restore}:"
 	select answer in ${tarballs};do
 		echo -e "Rolling back ${3} to the state ${green}${answer}${restore}"
-		[[ -n "${5}" ]] && rm -rf ${5}
-		tar -xf "${1}/${2}_${answer}.tar.bz2" -C ${4} 2>/dev/null
+		[[ -n "${5}" ]] && rm -rf "${5}"
+		tar -xf "${1}/${2}_${answer}.tar.bz2" -C "${4}" 2>/dev/null
 		eend $? 2>/dev/null
 		break
 	done
@@ -365,7 +365,7 @@ remove_ask(){
 		while read x;do
 			case ${x} in
 				Yes | YES | yes | Y | y | "" )
-					rm -rf ${1} 2>/dev/null
+					rm -rf "${1}" 2>/dev/null
 					break;;
 				No | NO | no | N | n )
 					break;;
@@ -376,7 +376,7 @@ remove_ask(){
 		eend $? 2>/dev/null
 	elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
 		echo -e "${contrast}Removing${restore} ${green}${1}${restore}"
-		rm -rf ${1} 2>/dev/null
+		rm -rf "${1}" 2>/dev/null
 		eend $? 2>/dev/null
 	elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
 		eend 0 2>/dev/null
@@ -416,7 +416,7 @@ file_or_dir(){
 	for target in ${founded};do
 		if [[ -f "${target}" ]];then
 			file="${target}"
-			if [[ -s ${file} ]];then
+			if [[ -s "${file}" ]];then
 				echo -e "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
 				${3};${4};${5};${6};${7};
 			else
@@ -427,7 +427,7 @@ file_or_dir(){
 		elif [[ -d "${target}" ]];then
 			for f in `find ${target} -type f \! -name '*~' \! -name '*.bak'`;do
 				file="${f}"
-				if [[ -s ${file} ]];then
+				if [[ -s "${file}" ]];then
 					echo -e "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
 					${3};${4};${5};${6};${7};
 				else
@@ -478,7 +478,7 @@ sort_uses(){
 			atom_opts+="${option}"
 		done
 		uses="$(sort_passed_uses "${atom_opts}")"
-		uses="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< ${uses})"
+		uses="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${uses}")"
 		if [[ -n "${comment}" ]];then
 			echo "${atom} ${uses} #${comment}" >> "${tmp_file}"
 		else
@@ -524,7 +524,7 @@ stupid_keywords(){
 					for pkey in ${parent_keys};do
 						if [[ "${key}" == "${KEY}" || ${key} == "${pkey}" ]];then
 							echo -e "Twice defined keyword ${red}${key}${restore}:\t${green}${satom}${restore}"
-							out_keys="$(grep -v "`printf ${key}`"  <<< "${out_keys}" || true)"
+							out_keys="$(grep -v "$(printf '%s' "${key}")"  <<< "${out_keys}" || true)"
 						fi
 					done
 				done
@@ -563,7 +563,7 @@ sort_keys(){
 			atom_opts+="${option}"
 		done
 		keys="$(sort_passed_uses "${atom_opts}")"
-		keys="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< ${keys})"
+		keys="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${keys}")"
 		keys="${keys:-"~${ARCH}"}"
 		if [[ -n "${comment}" ]];then
 			echo "${atom} ${keys} #${comment}" >> "${tmp_file}"
@@ -857,10 +857,10 @@ invalid_uses(){
 			prepare(){
 				while read string;do
 					struse="${string#${category}/${pn}}"
-					struse="$(tr "[:space:]" $'\n' <<< ${struse})"
+					struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
 					usefxd="$(sed -e "s|^${trash#-}$||" -e "s|^\-${trash#-}$||" -e '/^$/d' <<< "${struse}")"
 					usefxd="$(tr $'\n' " " <<< "${usefxd}")"
-					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< ${usefxd})"
+					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 					strfxd="${category}/${pn} ${usefxd}"
 					sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
 					eend $? 2>/dev/null
@@ -870,10 +870,10 @@ invalid_uses(){
 			prepare_similar(){
 				while read string;do
 					struse="${string#${category}/${pn}}"
-					struse="$(tr "[:space:]" $'\n' <<< ${struse})"
+					struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
 					usefxd="$(sed -e "s|^${use#-}$|${similar_use}|" -e "s|^\-${use#-}$|\-${similar_use}|" -e '/^$/d' <<< "${struse}")"
 					usefxd="$(tr $'\n' " " <<< "${usefxd}")"
-					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< ${usefxd})"
+					usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 					strfxd="${category}/${pn} ${usefxd}"
 					sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
 					eend $? 2>/dev/null
@@ -1127,7 +1127,7 @@ not_found(){
 		set -f
 		tlines="$(grep "^${file} " <<< "${invalid}" | sed "s|${file} ||g")"
 		while read line;do
-			sed -e "s|^`printf ${line}`.*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
+			sed -e "s|^$(printf '%s' "${line}").*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
 		done <<< "${tlines}"
 		diff_ask "${file}" "${tmp_file}"
 		set +f
@@ -1779,7 +1779,7 @@ overlays(){
 		trash="$(fix_deps)"
 		if [[ -n "${trash}" ]];then
 			echo -e "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|removing:\\${green}|;s|$|\\${restore}|")"
-			rm -rf ${trash} 2>/dev/null || echo failed && exit 1
+			rm -rf "${trash}" 2>/dev/null || echo failed && exit 1
 		else
 			break
 			
