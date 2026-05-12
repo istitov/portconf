@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright megabaks
 # Distributed under the terms of the GNU General Public License v3 or later
+set -u
 ############################################################################
 ################ portage functions #########################################
 if [[ -f "/lib/gentoo/functions.sh" ]]; then
@@ -35,6 +36,9 @@ BRDIR="/var/lib/portconf"
 PORT_ETC="/etc/portage"
 WORLD="/var/lib/portage/world"
 ARCH="$(eix --print DEFAULT_ARCH)"
+yes=""
+PRETEND=""
+eix_cache=""
 [[ -f "/etc/portconf.conf" ]] && . /etc/portconf.conf
 COUNT="${COUNT:-10}"
 ############################################################################
@@ -283,6 +287,7 @@ world_restore(){
 ############################################################################
 ################ diff_ask ##################################################
 diff_ask(){
+	full_diff=""
 	my_diff="$(diff ${1} ${2} | grep --color=never "[[:digit:]][a-z][[:digit:]]")"
 	if [[ -n "${my_diff}" ]];then
 		while read subj;do
@@ -399,7 +404,7 @@ sort_uniq_files(){
 ############################################################################
 ################ file or dir... ############################################
 file_or_dir(){
-	local founded
+	local founded=""
 	for i in ${1};do
 		founded+=" $(ls -d1 ${PORT_ETC}/${i} 2>/dev/null)"
 	done
@@ -462,6 +467,7 @@ rm_all_comments(){
 ############################################################################
 ################ sort_uses #################################################
 sort_uses(){
+	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
 	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq)"
@@ -546,6 +552,7 @@ stupid_keywords(){
 ############################################################################
 ################ sort_keys #################################################
 sort_keys(){
+	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
 	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq)"
@@ -615,6 +622,7 @@ uniq_keywords(){
 ############################################################################
 ################ not_installed #############################################
 installed(){
+	all_vers=""
 	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}')"
 	if [[ -n "${installed}" ]];then
 		installed_vers="$(awk -F \: '{print $1}' <<< "${installed}")"
@@ -709,6 +717,7 @@ package_env_conf(){
 	all_confs="$(find ${PORT_ETC}/env/ -maxdepth 1 -type f)"
 	all_confs="${all_confs//${PORT_ETC////\/}\/env\//}"
 	check_env_conf(){
+		USED_ENV=""
 		atoms="$(sed 's/^[ \t]*//;s/[ \t]*$//;/^#/d;/^$/d;' < ${file} | awk '{print $1}')"
 		while read line;do
 			line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
@@ -757,6 +766,7 @@ package_env(){
 ############################################################################
 ################ env not_installed #########################################
 env_not_installed(){
+	RM=""
 	echo -e "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
 	for x in "env" "env.d";do
 		files="$(find ${PORT_ETC}/${x}/ -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null| cut -d\/ -f5-)"
@@ -822,6 +832,8 @@ env_not_installed(){
 ################ incorrect uses ############################################
 invalid_uses(){
 	set -f
+	incorrect_use=""
+	GLOBAL=""
 	FULL="${PROFILE} ${MAKE_USES}"
 	for opt in ${FULL};do
 		GLOBAL+=" $(echo ${FULL} | tr "[:space:]" $'\n' | grep -e "^${opt#-}$" -e "^\-${opt#-}$" | tail -n1)"
@@ -1001,6 +1013,7 @@ hell_parser(){
 }
 
 invalid_uses_make(){
+	invalid_uses=""
 	set -f
 	echo -e "${underline}Checking use flags in${restore} ${contrast}${makefile}${restore}"
 	tmp_file="$(_mktemp)"
@@ -1031,6 +1044,7 @@ invalid_uses_make(){
 ############################################################################
 ################ not_found #################################################
 not_found(){
+	INVALID_FOUNDED=""
 	echo -e "${underline}Checking invalid entries${restore}..."
 	TRASH="$(LANG=en eix -Ttc 2>/dev/null)"
 	for package in $(ls -d1 ${PORT_ETC}/package* | grep -v -e "~" -e "\.bak" -e "\.old");do
@@ -1259,6 +1273,8 @@ package_envs(){
 ############################################################################
 ################ mask/unmask trash #########################################
 all_mask_trash(){
+	MASKED=""
+	UNMASKED=""
 	pre_mask_trash(){
 		masked="$(awk '{print $1}' ${file} | grep -v '^#.*')"
 		MASKED+="$(package_envs "${masked}")"$'\n'
@@ -1411,6 +1427,7 @@ sort_uniq_mask_use(){
 }
 
 profile_masked_uses() {
+	all_uses=""
 	file="${1}/${2}"
 	if [[ -f "${file}" ]];then
 		all_uses+="$(grep "^[^#].*$" "${file}")"$'\n'
@@ -1474,6 +1491,7 @@ check_use_masked() {
 ############################################################################
 ################ regen_world ###############################################
 regen_world(){
+	notrash_pkgs=""
 	tmp_world="$(_mktemp)"
 	ex_world="$(_mktemp)"
 	emerge_log="$(_mktemp)"
@@ -1572,6 +1590,15 @@ regen_world(){
 ############################################################################
 ################ unused repo and dep-cache #################################
 overlays(){
+	UNUSED=""
+	link_used=""
+	link_unused=""
+	TRASH_REPO=""
+	bad_links=""
+	used_repos=""
+	good_links=""
+	layman_overlays=""
+	portage_overlays=""
 	########## repo over layman
 	layman_path="$(awk '/storage[[:space:]].*:/ {print $3}' /etc/layman/layman.cfg)"
 	source "${layman_path}/make.conf" 2>/dev/null
@@ -1825,7 +1852,7 @@ eix_dep_keys="--use-invalid
 -ft
 --full
 -f"
-opts=" ${PORTCONF_DEFAULT_OPTS} ${@}"
+opts=" ${PORTCONF_DEFAULT_OPTS:-} ${@}"
 grep -q -e " \--yes\>" -e " \-y\>" <<< " ${opts}" && yes="1"
 grep -q -e " \--pretend\>" -e " \-p\>" <<< " ${opts}" && PRETEND="1"
 opts="$(sed -e 's| --yes\>||g;s| -y\>||g' -e 's| --pretend\>||g;s| -p\>||g' <<< " ${opts}")"
