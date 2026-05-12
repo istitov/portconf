@@ -60,8 +60,8 @@ sort_passed_uses(){
 	uses=""
 	for opt in ${1};do
 		opt="${opt//\*/\\*}"
-		uses="$(tr "[:space:]" $'\n' <<< "${uses}" | grep -v -e "^${opt#-}$" -e "^\-${opt#-}$" | tr $'\n' " " || true)"
-		uses+=" $(tr "[:space:]" $'\n' <<< "${1}" | grep -e "^${opt#-}$" -e "^\-${opt#-}$" | tail -n1 || true)"
+		uses="$(tr "[:space:]" $'\n' <<< "${uses}" | grep -v -e "^${opt#-}$" -e "^-${opt#-}$" | tr $'\n' " " || true)"
+		uses+=" $(tr "[:space:]" $'\n' <<< "${1}" | grep -e "^${opt#-}$" -e "^-${opt#-}$" | tail -n1 || true)"
 		unset opt
 	done
 	echo ${uses}
@@ -858,7 +858,7 @@ invalid_uses(){
 	GLOBAL=""
 	FULL="${PROFILE} ${MAKE_USES}"
 	for opt in ${FULL};do
-		GLOBAL+=" $(echo ${FULL} | tr "[:space:]" $'\n' | grep -e "^${opt#-}$" -e "^\-${opt#-}$" | tail -n1 || true)"
+		GLOBAL+=" $(echo ${FULL} | tr "[:space:]" $'\n' | grep -e "^${opt#-}$" -e "^-${opt#-}$" | tail -n1 || true)"
 	done
 	GLOBAL="$(echo ${GLOBAL} | tr "[:space:]" $'\n' | sort -u)"
 ############################################################################
@@ -931,7 +931,7 @@ invalid_uses(){
 
 				if grep -q "^${use}$" <<< "${GLOBAL}" && grep -q "^${use}$" <<< "${LOCAL}";then
 					global_use="${global_use} ${use}"
-				elif grep -q "^\-${use}$" <<< "${GLOBAL}" && grep -q "^\-${use}$" <<< "${LOCAL}";then
+				elif grep -q "^-${use}$" <<< "${GLOBAL}" && grep -q "^-${use}$" <<< "${LOCAL}";then
 					global_use="${global_use} -${use}"
 					incorrect_use="${incorrect_use// ${use}/}"
 				fi
@@ -1176,7 +1176,7 @@ use_makeconf(){
 			if grep -q "^${flag}$" <<< "${USE}" && grep -q "^${flag}$" <<< "${PROFILE}";then
 				echo -e "Twice defined: ${red}${use}${restore}"
 				sed -e "s|[^[:punct:]]\<${flag}\>||g" -i ${tmp_file}
-			elif grep -q "^\-${flag}$" <<< "${USE}" && grep -q "^\-${flag}$" <<< "${PROFILE}";then
+			elif grep -q "^-${flag}$" <<< "${USE}" && grep -q "^-${flag}$" <<< "${PROFILE}";then
 				echo -e "Twice defined: ${red}-${use}${restore}"
 				sed -e "s|[^[:punct:]]\-\<${flag}\>||g" -i ${tmp_file}
 			fi
@@ -1488,7 +1488,7 @@ etc_profile_use_mask() {
 	tmp_file="$(_mktemp)"
 	cp "${orig_file}" "${tmp_file}"
 	while read use;do
-		if grep -q "^${use/-/\-}$" <<< "$(use_mask)";then
+		if grep -q "^${use}$" <<< "$(use_mask)";then
 			if grep -q "^-" <<< "${use}";then
 				echo -e "Twice unmasked: ${red}${use}${restore}"
 				sed -e "s|^${use}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
@@ -1879,11 +1879,11 @@ eix_dep_keys="--use-invalid
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
 opts=" ${PORTCONF_DEFAULT_OPTS:-} ${@}"
-grep -q -e " \--yes\>" -e " \-y\>" <<< " ${opts}" && yes="1"
-grep -q -e " \--pretend\>" -e " \-p\>" <<< " ${opts}" && PRETEND="1"
+grep -q -e " --yes\>" -e " -y\>" <<< " ${opts}" && yes="1"
+grep -q -e " --pretend\>" -e " -p\>" <<< " ${opts}" && PRETEND="1"
 opts="$(sed -e 's| --yes\>||g;s| -y\>||g' -e 's| --pretend\>||g;s| -p\>||g' <<< " ${opts}")"
-if grep -q "${eix_dep_keys//\-/\\-}" <<< "${opts}";then
-	if grep -q -e " \--regen-cache\>" -e " \-rc\>" <<< " ${opts}";then
+if grep -q -- "${eix_dep_keys}" <<< "${opts}";then
+	if grep -q -e " --regen-cache\>" -e " -rc\>" <<< " ${opts}";then
 		eix_check
 		opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
 	else
