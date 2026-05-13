@@ -124,5 +124,14 @@ jobs:
       - name: bats integration suite
         run: make check-integration
 
+      # Smoke tier executes the built src/portconf binary against the
+      # stage3 container's real Portage tree (the same one populated by
+      # emerge-webrsync above).  This catches @PACKAGE_VERSION@ substitution
+      # failures and any incompatibility with the latest eix / eselect
+      # output that the unit/integration tiers miss because they stub or
+      # sandbox those tools.
+      - name: bats smoke suite (real Portage tree)
+        run: make check-smoke
+
       - name: dist tarball sanity-check
         run: make dist

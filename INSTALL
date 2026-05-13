@@ -65,6 +65,15 @@ Run with:
 Integration tests read /etc/portage directly via eix -Ttc and are therefore
 host-sensitive: they expect a working, populated Portage tree.
 
+Smoke tests run the BUILT src/portconf binary end-to-end against the host's
+real Portage tree (eselect profile list, /etc/portage/make.profile, eix).
+They cover only read-only flags (--help, --version, -apu, -cpu, no-op
+combinations) — enough to catch substitution failures, profile-tree layout
+drift, and eix/eselect output-format regressions, without mutating
+/etc/portage or /var/lib/portconf.  Requires bats, eselect, eix.
+
+    make check-smoke            # or: bats tests/smoke/
+
 
 Configuration
 -------------

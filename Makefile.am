@@ -25,7 +25,10 @@ EXTRA_DIST = \
 	tests/integration/test_helper.bash \
 	tests/integration/invalid_uses_make.bats \
 	tests/integration/not_found.bats \
-	tests/integration/invalid_uses.bats
+	tests/integration/invalid_uses.bats \
+	tests/smoke/test_helper.bash \
+	tests/smoke/help.bats \
+	tests/smoke/profile.bats
 
 # Override BATS to point at a non-system bats binary if needed.
 BATS = bats
@@ -54,4 +57,26 @@ check-integration:
 	done
 	$(BATS) $(srcdir)/tests/integration/
 
-.PHONY: check-integration
+# 'make check-smoke' runs the built src/portconf binary against the real
+# Portage tree.  Requires the binary to be built (autoreconf -i && configure
+# && make) and a Gentoo host with eselect/eix and a resolvable profile.
+# Only exercises read-only flags — no /etc/portage or /var/lib/portconf
+# touch.  See tests/smoke/test_helper.bash for scope rationale.
+check-smoke:
+	@command -v $(BATS) >/dev/null || { \
+	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \
+	  exit 1; \
+	}
+	@test -x src/portconf || { \
+	  echo "error: src/portconf not built; run ./configure && make first" >&2; \
+	  exit 1; \
+	}
+	@for tool in eselect eix; do \
+	  command -v $$tool >/dev/null || { \
+	    echo "error: $$tool not on PATH (smoke needs a real Gentoo host)" >&2; \
+	    exit 1; \
+	  }; \
+	done
+	$(BATS) $(srcdir)/tests/smoke/
+
+.PHONY: check-integration check-smoke
