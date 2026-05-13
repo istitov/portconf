@@ -51,6 +51,11 @@ make_test_portage() {
 	PORT_ETC="${TEST_PORT_ETC}"
 	yes="1"
 	PRETEND=""
+	# Gentoo's eend calls _update_tty_level which does `0<&1` (stdin ← stdout),
+	# corrupting bats' internal fd management and killing the test subprocess.
+	# Replace with a no-op that just returns the given exit code.
+	eend() { return "${1:-0}"; }
+	ebegin() { :; }
 }
 
 teardown_test_portage() {
