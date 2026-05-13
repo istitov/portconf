@@ -1145,7 +1145,7 @@ not_found(){
 	##### don't quote it! #####
 	if [[ -n "${INVALID_FOUNDED}" ]];then
 		invalid=$(emerge --version 2>&1 | sed -e '/--- Invalid atom in /!d' -e 's|--- Invalid atom in ||g;s|:||' |\
-			grep -v "${INVALID_FOUNDED}")
+			grep -v "${INVALID_FOUNDED}" || true)
 	else
 		invalid=$(emerge --version 2>&1 | sed -e '/--- Invalid atom in /!d' -e 's|--- Invalid atom in ||g;s|:||')
 	fi
