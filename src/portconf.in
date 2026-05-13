@@ -537,7 +537,8 @@ sort_use_file(){
 ################ stupid_keyword ############################################
 stupid_keywords(){
 	unset ACCEPT_KEYWORDS
-	local ACCEPT_KEYWORDS="$(eix --print ACCEPT_KEYWORDS)"
+	local ACCEPT_KEYWORDS
+	ACCEPT_KEYWORDS="$(eix --print ACCEPT_KEYWORDS)"
 	for KEY in ${ACCEPT_KEYWORDS};do
 		while read satom lkeys;do
 			comment="$(cut -d\# -f2- <<< "${lkeys}")"
@@ -749,7 +750,7 @@ package_env_conf(){
 	check_env_conf(){
 		USED_ENV=""
 		atoms="$(sed 's/^[ \t]*//;s/[ \t]*$//;/^#/d;/^$/d;' < "${file}" | awk '{print $1}')"
-		while read line;do
+		while IFS= read -r line;do
 			line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
 			for atom in ${atoms};do
 				USED_ENV+=" ${line#${atom} }"
@@ -772,7 +773,7 @@ package_env(){
 	package_env_def(){
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
-		while read line;do
+		while IFS= read -r line;do
 			xline="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
 			atom="${xline%% *}"
 			all_confs="${xline#${atom} }"
@@ -877,7 +878,7 @@ invalid_uses(){
 		export USEONLY=' <colliuse>'
 		#### just count
 		prepare(){
-			while read string;do
+			while IFS= read -r string;do
 				struse="${string#${category}/${pn}}"
 				struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
 				usefxd="$(sed -e "s|^${trash#-}$||" -e "s|^\-${trash#-}$||" -e '/^$/d' <<< "${struse}")"
@@ -890,7 +891,7 @@ invalid_uses(){
 		}
 
 		prepare_similar(){
-			while read string;do
+			while IFS= read -r string;do
 				struse="${string#${category}/${pn}}"
 				struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
 				usefxd="$(sed -e "s|^${use#-}$|${similar_use}|" -e "s|^\-${use#-}$|\-${similar_use}|" -e '/^$/d' <<< "${struse}")"
@@ -1086,7 +1087,7 @@ not_found(){
 			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
 			printf '%b\n' "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
-			while read line;do
+			while IFS= read -r line;do
 				printf '%b\n' "${red}Incorrect:${restore} ${line}"
 				line="${line//'*'/\*}"
 				[[ -n "${line}" ]] && sed -e "s|$line||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null
@@ -1154,7 +1155,7 @@ not_found(){
 		cp "${file}" "${tmp_file}"
 		set -f
 		tlines="$(grep "^${file} " <<< "${invalid}" | sed "s|${file} ||g" || true)"
-		while read line;do
+		while IFS= read -r line;do
 			sed -e "s|^$(printf '%s' "${line}").*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
 		done <<< "${tlines}"
 		diff_ask "${file}" "${tmp_file}"
@@ -1211,7 +1212,7 @@ backup_files(){
 ############################################################################
 ################ package.* files 2 dirs ####################################
 f_to_d(){
-	while read package;do
+	while IFS= read -r package;do
 		if [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
 			tmp_file="$(_mktemp)"
@@ -1219,8 +1220,8 @@ f_to_d(){
 			sed -e 's|^#.*||g' -i "${tmp_file}"
 			dir="${PORT_ETC}/${package##*/}"
 			mkdir "${dir}"
-			while read line;do
 			set -f
+			while read line;do
 				atom="$(awk '{print $1}' <<< "${line}")"
 				category="$(awk '{print $1}' <<< "$(qatom "${atom}")")"
 				if [[ "${category}" != "(null)" ]];then
@@ -1241,7 +1242,7 @@ f_to_d(){
 ############################################################################
 ################ package.* dirs 2 files ####################################
 d_to_f(){
-	while read package;do
+	while IFS= read -r package;do
 		if [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
 			tmp_file="$(_mktemp)"
@@ -1322,14 +1323,12 @@ mask_trash(){
 			printf '%b\n' "${red}Incorrect${restore}: ${mcategory}/${mpn}"
 		fi
 		TRASH+="${mfile} ${mcategory}/${mpn}"$'\n'
-		unset msw mcategory mpn mver mrev mslot mfile usw ucategory upn uver urev uslot ufile
-		continue
+		continue 2
 	}
 	non_slot_output(){
 		printf '%b\n' "${red}Incorrect${restore}: ${msw}${mcategory}/${mpn}-${mver}"
 		TRASH+="${mfile} ${msw}${mcategory}/${mpn}-${mver}"$'\n'
-		unset msw mcategory mpn mver mrev mslot mfile usw ucategory upn uver urev uslot ufile
-		continue
+		continue 2
 	}
 	all_mask_trash || return 1
 	###### m->masked; u->unmasked
@@ -1410,7 +1409,7 @@ remove_trash(){
 	cp "${file}" "${tmp_file}"
 	for atom in $(eix -Tc#);do
 		lines="$(grep "${atom}" "${file}" || true)"
-		while read line;do
+		while IFS= read -r line;do
 			entry="$(qatom "$(tr -d '<>=~#' <<< "${line}")" | awk '{print $1,$2}' | tr ' ' '/')"
 			if [[ "${atom}" == "${entry}" ]];then
 				if ! eix -qe --installed-masked "${entry}";then
