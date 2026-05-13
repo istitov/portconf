@@ -36,10 +36,14 @@ _mktemp() {
 ############################################################################
 ################ init ######################################################
 PACKAGE_VERSION="@PACKAGE_VERSION@"
-PKGDB="/var/db/pkg"
-BRDIR="/var/lib/portconf"
-PORT_ETC="/etc/portage"
-WORLD="/var/lib/portage/world"
+# All four path roots honor an environment override for testability and
+# unusual prefixes (e.g. ROOT=/mnt/chroot installs).  Defaults match the
+# canonical modern Gentoo layout.
+PKGDB="${PKGDB:-/var/db/pkg}"
+BRDIR="${BRDIR:-/var/lib/portconf}"
+PORT_ETC="${PORT_ETC:-/etc/portage}"
+WORLD="${WORLD:-/var/lib/portage/world}"
+DEP_PATH="${DEP_PATH:-/var/cache/edb/dep}"
 ARCH="$(eix --print DEFAULT_ARCH)"
 yes=""
 PRETEND=""
@@ -105,8 +109,10 @@ profile() {
 }
 
 pre_profile=""
+# Legacy /etc/make.profile (pre-portage-2.2) is honored only at the host
+# layout, never via PORT_ETC override.  Modern path is ${PORT_ETC}/make.profile.
 [[ -h "/etc/make.profile" ]] && pre_profile="$(profile "$(readlink -f /etc/make.profile)")"
-[[ -h "/etc/portage/make.profile" ]] && pre_profile="$(profile "$(readlink -f /etc/portage/make.profile)")"
+[[ -h "${PORT_ETC}/make.profile" ]] && pre_profile="$(profile "$(readlink -f "${PORT_ETC}/make.profile")")"
 profile_uses="$(sort_passed_uses "${pre_profile}")"
 PROFILE="$(tr "[:space:]" $'\n' <<< "${profile_uses}")"
 ############################################################################
@@ -137,7 +143,7 @@ current_profile(){
 	if [[ -h "/etc/make.profile" ]];then
 		target="$(readlink /etc/make.profile | sed 's|.*/profiles/||')"
 	else
-		target="$(readlink /etc/portage/make.profile | sed 's|.*/profiles/||')"
+		target="$(readlink "${PORT_ETC}/make.profile" | sed 's|.*/profiles/||')"
 	fi
 	USEs="$(sort_passed_uses "${PROFILE}")"
 	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w $(tput cols)
@@ -240,8 +246,19 @@ backup(){
 	newest="$(tail -n1 <<< "${tarballs}")"
 	count="$( wc -l <<< "${tarballs}")"
 	count="${count:-0}"
-	if [[ -f "/etc/make.conf" ]];then
-		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*} /etc/make.conf)"
+	# Derive the tar working dir from PORT_ETC instead of hardcoding /etc/,
+	# so test sandboxes (PORT_ETC=/tmp/foo/portage) don't accidentally tar
+	# the host's real /etc/portage tree.
+	local port_parent="${PORT_ETC%/*}"
+	local port_name="${PORT_ETC##*/}"
+	# Pre-2.2-portage systems kept make.conf at /etc/make.conf instead of
+	# inside the config dir.  Honor it only when PORT_ETC is at its default
+	# location — a sandboxed PORT_ETC must never pull the host's real
+	# /etc/make.conf into a test tarball.
+	local legacy_makeconf=""
+	[[ "${PORT_ETC}" == "/etc/portage" && -f "/etc/make.conf" ]] && legacy_makeconf="/etc/make.conf"
+	if [[ -n "${legacy_makeconf}" ]];then
+		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*} "${legacy_makeconf}")"
 	else
 		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*})"
 	fi
@@ -251,16 +268,16 @@ backup(){
 		if (( "${count}" >= "${COUNT}" ));then
 			rm "${BRDIR}/${oldest}"
 		fi
-		printf '%b\n' "/etc/portage backup: ${green}creating${restore}..."
+		printf '%b\n' "${PORT_ETC} backup: ${green}creating${restore}..."
 		name="${BRDIR}/portage_$(date +%g.%m.%d-%H:%M).tar.bz2"
-		if [[ -f "/etc/make.conf" ]];then
-			tar -jcf "${name}" -C /etc/ portage make.conf
+		if [[ -n "${legacy_makeconf}" ]];then
+			tar -jcf "${name}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}"
 		else
-			tar -jcf "${name}" -C /etc/ portage
+			tar -jcf "${name}" -C "${port_parent}/" "${port_name}"
 		fi
 		eend $? 2>/dev/null
 	else
-		printf '%b\n' "/etc/portage backups: ${green}already up-to-date${restore}"
+		printf '%b\n' "${PORT_ETC} backups: ${green}already up-to-date${restore}"
 		eend $? 2>/dev/null
 	fi
 }
@@ -310,7 +327,9 @@ restore(){
 ############################################################################
 ################ etc_restore ###############################################
 etc_restore(){
-	restore "${BRDIR}" "portage" "${PORT_ETC}" "/etc/" "${PORT_ETC}/*"
+	# Tar extract destination is the parent dir of PORT_ETC (the tarball
+	# contains a "portage" subdir as its top-level entry — see backup()).
+	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC%/*}/" "${PORT_ETC}/*"
 }
 ############################################################################
 ################ world_restore #############################################
@@ -1503,7 +1522,7 @@ mask_files() {
 use_mask() {
 	makeprof=""
 	[[ -h "/etc/make.profile" ]] && makeprof="/etc/make.profile"
-	[[ -h "/etc/portage/make.profile" ]] && makeprof="/etc/portage/make.profile"
+	[[ -h "${PORT_ETC}/make.profile" ]] && makeprof="${PORT_ETC}/make.profile"
 	for target in $(mask_files);do
 		profile_masked_uses "$(readlink -f "${makeprof}")" "${target}"
 	done
@@ -1647,11 +1666,15 @@ overlays(){
 	used_repos=""
 	good_links=""
 	portage_overlays=""
+	# stop is set inside fix_deps() when there's nothing left to clean
+	# and consumed by the outer dep-cache loop.  Pre-declare to avoid
+	# `unbound variable` under set -u on the first loop iteration.
+	stop=""
 
-	######## build repo list from repos.conf
+	######## build repo list from repos.conf (honors PORT_ETC override)
 	portage_overlays="$(
-		{ cat /etc/portage/repos.conf 2>/dev/null
-		  cat /etc/portage/repos.conf/*.conf 2>/dev/null; } |
+		{ cat "${PORT_ETC}/repos.conf" 2>/dev/null
+		  cat "${PORT_ETC}/repos.conf"/*.conf 2>/dev/null; } |
 		awk '/^\[/{gsub(/[\[\]]/,""); repo=$0; next}
 		     /^location[[:space:]]*=/{
 		       gsub(/^location[[:space:]]*=[[:space:]]*/,"")
@@ -1695,7 +1718,11 @@ overlays(){
 	done
 
 	######## unused overlays: repos.conf entries (excl. gentoo) with no installed packages
-	while IFS= read -r path name; do
+	# Default IFS is intentional here: each portage_overlays line is
+	# "<location> <name>" and we want field-splitting on the space.
+	# `IFS= read -r` would put the whole line in ${path} and leave
+	# ${name} empty, silently skipping every entry.
+	while read -r path name; do
 		[[ -z "${name}" || "${name}" == "gentoo" ]] && continue
 		grep -q "^${name}$" <<< "${used_repos}" || UNUSED+="${name}"$'\n'
 	done <<< "${portage_overlays}"
@@ -1764,7 +1791,10 @@ overlays(){
 		fi
 	}
 	fix_deps(){
-		DEP_PATH="/var/cache/edb/dep"
+		# DEP_PATH is set as an overridable global at init (line 43) so that
+		# test sandboxes don't sweep the host's real /var/cache/edb/dep when
+		# the test repos.conf doesn't list every overlay the host has cache
+		# entries for.
 		TRASH=""
 		while IFS= read -r dep_path; do
 			repo_path="$(sed "s|${DEP_PATH}||" <<< "${dep_path}")"

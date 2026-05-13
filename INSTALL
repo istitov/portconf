@@ -79,3 +79,22 @@ Configuration
 -------------
 A sample configuration file is installed to /etc/portconf.conf.
 Uncomment and adjust the settings as needed.  The defaults are safe.
+
+
+Environment overrides (for tests, chroots, ROOT prefixes)
+---------------------------------------------------------
+portconf honors the following environment variables; each falls back to
+the canonical modern Gentoo layout when unset.  Override only if you
+know what you are doing — pointing them at the wrong location can sweep
+or modify real system state.
+
+    PORT_ETC      path to the config dir       (default: /etc/portage)
+    BRDIR         portconf's tarball backup dir (default: /var/lib/portconf)
+    PKGDB         installed-package db root    (default: /var/db/pkg)
+    WORLD         path to the world file       (default: /var/lib/portage/world)
+    DEP_PATH      eix dep-cache root           (default: /var/cache/edb/dep)
+
+These are primarily intended for the bats integration test harness to
+sandbox each function.  The legacy /etc/make.conf and /etc/make.profile
+fallbacks are honored only when PORT_ETC is at its default location
+(so a sandboxed PORT_ETC never accidentally pulls in real /etc/ paths).

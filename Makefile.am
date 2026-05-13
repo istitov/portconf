@@ -31,6 +31,8 @@ EXTRA_DIST = \
 	tests/integration/invalid_uses.bats \
 	tests/integration/mask_trash.bats \
 	tests/integration/stupid_unmask.bats \
+	tests/integration/overlays.bats \
+	tests/integration/backup_path.bats \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats
