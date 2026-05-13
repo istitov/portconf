@@ -1,0 +1,56 @@
+#compdef portconf
+# zsh completion for portconf
+#
+# portconf accepts any combination of flags in a single invocation;
+# the exclusion lists in _arguments pair each long form with its short
+# alias so selecting one stops the other from re-appearing.  Short
+# forms are multi-character ("-us", "-rc", ...), so option-stacking
+# (_arguments -s) is intentionally NOT enabled — it would split "-rc"
+# into "-r -c", which means something different to portconf.
+
+_portconf() {
+	local -a args
+	args=(
+		'(-rc --regen-cache)'{-rc,--regen-cache}'[Create temporary eix cache; fix overlays]'
+		'(-b --backup)'{-b,--backup}'[Backup /etc/portage state]'
+		'(-r --restore)'{-r,--restore}'[Restore /etc/portage from a saved state]'
+		'(-s --sort)'{-s,--sort}'[Sort and deduplicate USE flags, keywords, package.* files, profile use.mask]'
+		'(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
+		'(-p --pretend)'{-p,--pretend}'[Check only; make no changes]'
+		'(-V --version)'{-V,--version}'[Print version and exit]'
+		'(-h --help)'{-h,--help}'[Show help]'
+
+		'(-us --use-sort)'{-us,--use-sort}'[Sort USE flags; dedup, last-wins]'
+		'(-ui --use-invalid)'{-ui,--use-invalid}'[Remove invalid or redundantly global USE flags]'
+		'(-um --use-make)'{-um,--use-make}'[Remove profile-defined USE flags from make.conf]'
+		'(-sup --stupid-use-profile)'{-sup,--stupid-use-profile}'[Remove duplicate masked/unmasked USE flags]'
+		'(-uf --use-full)'{-uf,--use-full}'[Equivalent to -us -ui -um -sup]'
+
+		'(-ku --keyword-uniq)'{-ku,--keyword-uniq}'[Sort and deduplicate package.keywords entries]'
+		'(-ko --keyword-one)'{-ko,--keyword-one}'[Keep only the latest keyword per atom]'
+
+		'(-t --trash)'{-t,--trash}'[Remove not-found atoms, empty/backup files, unused configs]'
+		'(-ft --force-trash)'{-ft,--force-trash}'[Remove all not-installed atoms (excludes package.mask)]'
+		'(-sm --stupid-mask)'{-sm,--stupid-mask}'[Remove incorrect masked atoms]'
+		'(-sum --stupid-unmask)'{-sum,--stupid-unmask}'[Remove incorrect unmasked atoms]'
+		'(-c --rm-comments)'{-c,--rm-comments}'[Delete lines starting with #]'
+		'(-ac --rm-all-comments)'{-ac,--rm-all-comments}'[Delete all comments, including inline]'
+		'(-f --full)'{-f,--full}'[Equivalent to -s -t -uf -ku -sm -sum]'
+
+		'(-f2d --files-2-dirs)'{-f2d,--files-2-dirs}'[Convert package.* flat files to per-package directories]'
+		'(-d2f --dirs-2-files)'{-d2f,--dirs-2-files}'[Convert package.* per-package directories back to flat files]'
+
+		'(-apu --all-profiles-use)'{-apu,--all-profiles-use}'[List USE flags defined across all profiles]'
+		'(-pu --profiles-use)'{-pu,--profiles-use}'[List USE flags of the current profile tree]'
+		'(-cpu --current-profile-use)'{-cpu,--current-profile-use}'[List USE flags of the active profile]'
+
+		'(-wb --world-backup)'{-wb,--world-backup}'[Back up the world file]'
+		'(-wr --world-restore)'{-wr,--world-restore}'[Restore the world file from a saved state]'
+		'(-wg --world-regen)'{-wg,--world-regen}'[Regenerate the world file (auto backup)]'
+
+		'(-fr --fix-repos)'{-fr,--fix-repos}'[Remove unused overlays and stale dependency cache]'
+	)
+	_arguments : "${args[@]}"
+}
+
+_portconf "$@"

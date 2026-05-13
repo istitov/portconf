@@ -1,4 +1,4 @@
-SUBDIRS = src man
+SUBDIRS = src man completion
 
 sysconf_DATA = portconf.conf
 

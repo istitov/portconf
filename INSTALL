@@ -26,6 +26,13 @@ To install system-wide (matching the ebuild layout):
     make
     doas make install
 
+Optional configure switches:
+
+    --disable-bash-completion   skip installing completion/portconf
+                                (default: install to $datadir/bash-completion/completions)
+    --disable-zsh-completion    skip installing completion/_portconf
+                                (default: install to $datadir/zsh/site-functions)
+
 
 Runtime dependencies
 --------------------

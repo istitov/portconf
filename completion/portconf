@@ -1,0 +1,41 @@
+# bash completion for portconf
+#
+# portconf accepts any combination of flags in a single invocation
+# ("OPTIONS must be separated by SPACE", per --help), so completion
+# offers the full option set regardless of how many flags are already
+# present on the command line.  No flag takes a value; no positional
+# arguments are accepted.
+
+_portconf() {
+	local cur opts
+	COMPREPLY=()
+	cur="${COMP_WORDS[COMP_CWORD]}"
+
+	opts="
+		--regen-cache --backup --restore --sort --yes --pretend
+		--version --help
+		--use-sort --use-invalid --use-make --stupid-use-profile --use-full
+		--keyword-uniq --keyword-one
+		--trash --force-trash --stupid-mask --stupid-unmask
+		--rm-comments --rm-all-comments --full
+		--files-2-dirs --dirs-2-files
+		--all-profiles-use --profiles-use --current-profile-use
+		--world-backup --world-restore --world-regen
+		--fix-repos
+		-rc -b -r -s -y -p -V -h
+		-us -ui -um -sup -uf
+		-ku -ko
+		-t -ft -sm -sum
+		-c -ac -f
+		-f2d -d2f
+		-apu -pu -cpu
+		-wb -wr -wg
+		-fr
+	"
+
+	if [[ "${cur}" == -* ]]; then
+		mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")
+	fi
+	return 0
+}
+complete -F _portconf portconf

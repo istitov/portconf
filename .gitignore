@@ -13,6 +13,8 @@
 /src/portconf
 /man/Makefile
 /man/Makefile.in
+/completion/Makefile
+/completion/Makefile.in
 
 # dist tarballs
 /*.tar.*

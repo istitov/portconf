@@ -77,12 +77,15 @@ jobs:
           dev-util/bats-support ~amd64
           dev-util/bats-assert  ~amd64
           EOF
+          # zsh is needed only for the completion-syntax check; bash is
+          # already in stage3.  Small (~5MB binpkg) and a typo in
+          # completion/_portconf would otherwise land silently.
           emerge --quiet-build --usepkg=y --getbinpkg=y \
             dev-build/autoconf dev-build/automake \
             dev-util/bats dev-util/bats-support dev-util/bats-assert \
             dev-util/shellcheck-bin \
             app-portage/eix app-portage/portage-utils \
-            dev-libs/tre
+            dev-libs/tre app-shells/zsh
 
       # Populate the eix cache before running tests that call real eix.
       # invalid_uses and invalid_uses_make rely on eix -e / --print-all-useflags
@@ -106,6 +109,14 @@ jobs:
       # findings (SC2xxx errors, syntax) break the build.
       - name: shellcheck
         run: shellcheck --severity=error src/portconf
+
+      # Completion files are static (no template substitution), but a
+      # typo in either lands silently — neither make nor make check
+      # parses them.  bash -n / zsh -n catch syntax errors up front.
+      - name: syntax-check completion files
+        run: |
+          bash -n completion/portconf
+          zsh -n completion/_portconf
 
       - name: bats unit suite
         run: make check
