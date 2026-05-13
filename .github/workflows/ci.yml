@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [master, modernization]
+  pull_request:
+    branches: [master, modernization]
+  workflow_dispatch:
+  # Weekly run against fresh gentoo/stage3:latest catches drift in
+  # upstream Portage tooling (eix output format, qatom flags, tre's
+  # agrep behaviour) — portconf parses their output, so a tool change
+  # surfaces here before a user files a bug.  Mondays 06:00 UTC, after
+  # weekend tree updates.
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+# Cancel in-flight runs of the same workflow on the same ref when a
+# new push arrives.  Scheduled runs use github.run_id so they don't
+# cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: gentoo/stage3 — shellcheck + bats + integration
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:latest
+
+    steps:
+      # actions/checkout's runner needs git + node inside the container;
+      # stage3:latest ships neither.  emerge-webrsync populates the
+      # Portage tree (faster than --sync for one-shot CI); getuto seeds
+      # the binhost trust keyring (otherwise emerge bails on NO_PUBKEY
+      # when downloading signed binpkgs).
+      - name: Bootstrap container (git + node for actions/checkout)
+        run: |
+          emerge-webrsync --quiet
+          getuto
+          emerge --quiet-build --usepkg=y --getbinpkg=y \
+            dev-vcs/git net-libs/nodejs
+
+      # The workspace is bind-mounted from a different uid; git refuses
+      # to operate on it without an explicit safe.directory entry.
+      - name: Trust workspace for git ownership check
+        run: git config --system --add safe.directory '*'
+
+      - uses: actions/checkout@v5
+
+      # bats-support / bats-assert are not in ::gentoo — they ship via
+      # the stuff overlay (and ::guru).  Use stuff to stay aligned with
+      # the maintainer's other projects.
+      - name: Add stuff overlay
+        run: |
+          mkdir -p /etc/portage/repos.conf
+          cat >/etc/portage/repos.conf/stuff.conf <<'EOF'
+          [stuff]
+          location = /var/db/repos/stuff
+          sync-type = git
+          sync-uri = https://github.com/istitov/stuff
+          auto-sync = yes
+          EOF
+          emaint sync -r stuff
+
+      - name: Install build + test dependencies
+        run: |
+          # bats-support / bats-assert on stuff are ~amd64; stage3:latest
+          # defaults to stable amd64.  Per-atom unmask is narrower than
+          # ACCEPT_KEYWORDS=~amd64 at the step level (would unmask the
+          # whole graph and produce slot conflicts on python tooling).
+          mkdir -p /etc/portage/package.accept_keywords
+          cat >/etc/portage/package.accept_keywords/bats-helpers <<'EOF'
+          dev-util/bats-support ~amd64
+          dev-util/bats-assert  ~amd64
+          EOF
+          emerge --quiet-build --usepkg=y --getbinpkg=y \
+            dev-build/autoconf dev-build/automake \
+            dev-util/bats dev-util/bats-support dev-util/bats-assert \
+            dev-util/shellcheck-bin \
+            app-portage/eix app-portage/portage-utils \
+            dev-libs/tre
+
+      # Populate the eix cache before running tests that call real eix.
+      # invalid_uses and invalid_uses_make rely on eix -e / --print-all-useflags
+      # returning data from a working cache; not_found stubs eix.
+      - name: eix-update
+        run: eix-update
+
+      - name: autoreconf -i
+        run: autoreconf -i
+
+      - name: configure
+        run: ./configure
+
+      - name: build
+        run: make -j"$(nproc)"
+
+      # shellcheck the BUILT script (src/portconf), not the .in template —
+      # @PACKAGE_VERSION@ is a substitution token, not a bash construct,
+      # and shellcheck would flag the surrounding context wrongly.
+      # --severity=error suppresses style nits; only correctness-level
+      # findings (SC2xxx errors, syntax) break the build.
+      - name: shellcheck
+        run: shellcheck --severity=error src/portconf
+
+      - name: bats unit suite
+        run: make check
+
+      - name: bats integration suite
+        run: make check-integration
+
+      - name: dist tarball sanity-check
+        run: make dist

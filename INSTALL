@@ -49,7 +49,7 @@ against real Portage tooling.  The following must be on PATH:
 
     app-portage/eix
     app-portage/portage-utils   (qatom)
-    sys-apps/agrep (or equivalent agrep implementation)
+    dev-libs/tre                (agrep)
 
 Run with:
 

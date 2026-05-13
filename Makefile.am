@@ -40,7 +40,7 @@ check-local:
 
 # 'make check-integration' runs the integration suite.
 # Requires: bats, eix (app-portage/eix), qatom (app-portage/portage-utils),
-#           agrep (sys-apps/agrep or equivalent).
+#           agrep (dev-libs/tre).
 check-integration:
 	@command -v $(BATS) >/dev/null || { \
 	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \
