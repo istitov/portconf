@@ -53,8 +53,8 @@ tmp_categories=""
 COUNT="${COUNT:-10}"
 ############################################################################
 ################ ignore ####################################################
-[[ -n "${IGNORE_CATEGORY}" ]] && IGNORE_CATEGORY="$(sed -e '/^$/d' -e 's/$/\/.*/g' <<< "`tr "[:space:]" $'\n' <<< "${IGNORE_CATEGORY}"`")"
-[[ -n "${IGNORE_PN}" ]] && IGNORE_PN="$(sed -e '/^$/d' -e 's/^/.*\//g' <<< "`tr "[:space:]" $'\n' <<< "${IGNORE_PN}"`")"
+[[ -n "${IGNORE_CATEGORY}" ]] && IGNORE_CATEGORY="$(sed -e '/^$/d' -e 's/$/\/.*/g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_CATEGORY}")")"
+[[ -n "${IGNORE_PN}" ]] && IGNORE_PN="$(sed -e '/^$/d' -e 's/^/.*\//g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_PN}")")"
 IGNORE="${IGNORE_CATEGORY}
 ${IGNORE_PN}"
 IGNORE="$(sed -e '/^$/d' <<< "${IGNORE}")"
@@ -85,7 +85,7 @@ profile() {
 	fi
 	use="${USE}"
 	if [[ -f "${1}/parent" ]]; then
-		for path in `cat ${1}/parent`;do
+		for path in $(cat "${1}/parent");do
 			use="$use $(profile "${1}/$path")"
 		done
 	fi
@@ -93,28 +93,28 @@ profile() {
 }
 
 pre_profile=""
-[[ -h "/etc/make.profile" ]] && pre_profile="$(profile `readlink -f /etc/make.profile`)"
-[[ -h "/etc/portage/make.profile" ]] && pre_profile="$(profile `readlink -f /etc/portage/make.profile`)"
+[[ -h "/etc/make.profile" ]] && pre_profile="$(profile "$(readlink -f /etc/make.profile)")"
+[[ -h "/etc/portage/make.profile" ]] && pre_profile="$(profile "$(readlink -f /etc/portage/make.profile)")"
 profile_uses="$(sort_passed_uses "${pre_profile}")"
 PROFILE="$(tr "[:space:]" $'\n' <<< "${profile_uses}")"
 ############################################################################
 ################ all_use_all_profiles ######################################
 all_use_all_profiles(){
-	for target in `eselect --brief profile list`;do
+	for target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		echo -e "\n${green}${target}${restore}: "${USEs} | fold -s -w `tput cols`
+		echo -e "\n${green}${target}${restore}: "${USEs} | fold -s -w $(tput cols)
 		unset USEs
 	done
 }
 ############################################################################
 ################ profile_use ###############################################
 profile_use(){
-	PS3=`echo -e "${contrast}Choose number:${restore} "`
-	select target in `eselect --brief profile list`;do
+	PS3="$(echo -e "${contrast}Choose number:${restore} ")"
+	select target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		echo -e "\n${green}${target}${restore}: "${USEs} | fold -s -w `tput cols`
+		echo -e "\n${green}${target}${restore}: "${USEs} | fold -s -w $(tput cols)
 		unset USEs
 		break
 	done
@@ -129,7 +129,7 @@ current_profile(){
 	fi
 	profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 	USEs="$(sort_passed_uses "${PROFILE}")"
-	echo -e "${green}${target}${restore}: "${USEs} | fold -s -w `tput cols`
+	echo -e "${green}${target}${restore}: "${USEs} | fold -s -w $(tput cols)
 	unset USEs
 }
 ############################################################################
@@ -287,7 +287,7 @@ restore(){
 	tarballs="${tarballs//${1}\/}"
 	tarballs="${tarballs//.tar.bz2/}"
 	tarballs="${tarballs//${2}_/}"
-	PS3=`echo -e "${contrast}Choose number:${restore} "`
+	PS3="$(echo -e "${contrast}Choose number:${restore} ")"
 	echo -e "${contrast}Available backups${restore}:"
 	select answer in ${tarballs};do
 		echo -e "Rolling back ${3} to the state ${green}${answer}${restore}"
@@ -322,18 +322,18 @@ diff_ask(){
 			action="$(grep -o "[a-z]" <<< "${subj}" || true)"
  			if [[ "${action}" == "a" ]];then
 				for num in ${new_num};do
-					[[ "${num}" != "0" ]] && full_diff+="${num}^#+#${green}`sed -n "${num}p" "${2}"`${restore}#"$'\n'
+					[[ "${num}" != "0" ]] && full_diff+="${num}^#+#${green}$(sed -n "${num}p" "${2}")${restore}#"$'\n'
 				done
 			elif [[ "${action}" == "d" ]];then
 				for num in ${old_num};do
-					[[ "${num}" != "0" ]] && full_diff+="${num}^#-#${red}`sed -n "${num}p" "${1}"`${restore}#"$'\n'
+					[[ "${num}" != "0" ]] && full_diff+="${num}^#-#${red}$(sed -n "${num}p" "${1}")${restore}#"$'\n'
 				done
 			elif [[ "${action}" == "c" ]];then
 				for num in ${old_num};do
-					[[ "${num}" != "0" ]] && full_diff+="${num}^#-#${red}`sed -n "${num}p" "${1}"`${restore}#"$'\n'
+					[[ "${num}" != "0" ]] && full_diff+="${num}^#-#${red}$(sed -n "${num}p" "${1}")${restore}#"$'\n'
 				done
 				for num in ${new_num};do
-					[[ "${num}" != "0" ]] && full_diff+="${num}^#+#${green}`sed -n "${num}p" "${2}"`${restore}#"$'\n'
+					[[ "${num}" != "0" ]] && full_diff+="${num}^#+#${green}$(sed -n "${num}p" "${2}")${restore}#"$'\n'
 				done
 			fi
 		done <<< "${my_diff}"
@@ -405,7 +405,7 @@ remove_ask(){
 ############################################################################
 ################ sort_packages #############################################
 sort_uniq_files(){
-	for package in `find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true`;do
+	for package in $(find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true);do
 		tmp_sort="$(_mktemp)"
 		echo -e "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
@@ -449,7 +449,7 @@ file_or_dir(){
 				eend $? 2>/dev/null
 			fi
 		elif [[ -d "${target}" ]];then
-			for f in `find ${target} -type f \! -name '*~' \! -name '*.bak'`;do
+			for f in $(find ${target} -type f \! -name '*~' \! -name '*.bak');do
 				file="${f}"
 				if [[ -s "${file}" ]];then
 					echo -e "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
@@ -657,8 +657,8 @@ installed(){
 	if [[ -n "${installed}" ]];then
 		installed_vers="$(awk -F \: '{print $1}' <<< "${installed}")"
 		installed_min_ver="$(head -n1 <<< "${installed_vers}")"
-		installed_max_ver="$(tail -n1 <<< "`grep -v 9999 <<< "${installed_vers}"`" || true)"
-		installed_live_ver="$(tail -n1 <<< "`grep 9999 <<< "${installed_vers}"`" || true)"
+		installed_max_ver="$(tail -n1 <<< "$(grep -v 9999 <<< "${installed_vers}")" || true)"
+		installed_live_ver="$(tail -n1 <<< "$(grep 9999 <<< "${installed_vers}")" || true)"
 		installed_slots="$(awk -F \: '{print $2}' <<< "${installed}")"
 		#::repo check
 		full_vers="$(qlist -ICev "${category}/${pn}" | sed "s|${category}/${pn}-||g")"
@@ -674,7 +674,7 @@ installed(){
 }
 
 not_if(){
-	atoms="$(awk '{print $1}' <<< "`grep -v "^#" < ${package}`" || true)"
+	atoms="$(awk '{print $1}' <<< "$(grep -v "^#" < ${package})" || true)"
 	[[ -n "${IGNORE}" ]] && atoms="$(grep -v "${IGNORE}" <<< "${atoms}" || true)"
 	echo -e "${underline}Checking${restore} ${contrast}$package${restore}"
 	if [[ -n "${atoms}" ]];then
@@ -709,13 +709,13 @@ not_if(){
 					sed -e "s|.*\<${category}/${pn}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null
 					eend $? 2>/dev/null
 				fi
-			done <<< `qatom "${atom}"`
+			done <<< "$(qatom "${atom}")"
 		done <<< "${atoms}"
 	fi
 }
 
 force_not_installed(){
-	for package in `find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak'`;do
+	for package in $(find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak');do
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}" || true)" ]];then
 			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
@@ -732,7 +732,7 @@ force_not_installed(){
 		fi
 	done
 
-	for x in `find ${PORT_ETC}/package* -type f`;do
+	for x in $(find ${PORT_ETC}/package* -type f);do
 		if [[ ! -s "${x}" ]];then
 			echo -e "${underline}Empty file${restore} ${contrast}${x}${restore}"
 			remove_ask "${x}"
@@ -852,7 +852,7 @@ env_not_installed(){
 		done
 		IFS=$'\n'
 		for target in ${dirs};do
-			[[ -z "`ls ${target}`" ]] && remove_ask "${target}"
+			[[ -z "$(ls ${target})" ]] && remove_ask "${target}"
 		done
 		IFS="${_save_ifs}"
 		unset _save_ifs
@@ -965,7 +965,7 @@ invalid_uses(){
 			fi
 			unset ALL_USE LOCAL USES use
 			incorrect_use="" global_use=""
-		done <<< "`[[ -n "${atoms}" ]] && echo -e "${atoms}"`"
+		done <<< "$([[ -n "${atoms}" ]] && echo -e "${atoms}")"
 		while read atom opt;do
 			if [[ -n "${atom}" ]] && [[ -z "${opt}" ]];then
 				echo -e "Removing atom: ${green}${atom}${restore}"
@@ -1003,7 +1003,7 @@ invalid_uses(){
 		diff_ask "${file}" "${tmp_file}"
 		[[ ! -s "${file}" ]] && remove_ask "${file}"
 	elif [[ -d "${PORT_ETC}/package.use" ]];then
-		for f in `find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak'`;do
+		for f in $(find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak');do
 			if [[ -s "${f}" ]];then
 				file="${f}"
 				tmp_file="$(_mktemp)"
@@ -1100,7 +1100,7 @@ not_found(){
 			echo -e "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
 			_save_ifs="${IFS:-}"; IFS=$'\n'
 			for line in ${incorrect};do
-				for file in `grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}'`;do
+				for file in $(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}');do
 					tmp_file="$(_mktemp)"
 					cp "${file}" "${tmp_file}"
 					echo -e "${red}Incorrect:${restore} ${line}"
@@ -1132,10 +1132,10 @@ not_found(){
 		if [[ -n "${line}" && -f "${file}" ]];then
 			tmp_file="$(_mktemp)"
 			cp "${file}" "${tmp_file}"
-			[[ -n "${line}" ]] && sed -e "s|`echo $line`$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
+			[[ -n "${line}" ]] && sed -e "s|$(echo "$line")$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
-			for package in `grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}'`;do
+			for package in $(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}');do
 					tmp_package="$(_mktemp)"
 					cp "${package}" "${tmp_package}"
 					echo -e "${red}Incorrect:${restore} ${line}"
@@ -1201,7 +1201,7 @@ use_makeconf(){
 ################ empty files ###############################################
 empty_files(){
 	echo -e "${underline}Looking empty files${restore}"
-	for target in `find ${PORT_ETC} -type f`;do
+	for target in $(find ${PORT_ETC} -type f);do
 		[[ ! -s "${target}" || -z "$(grep -v "^#" < "${target}" || true)" ]] && remove_ask "${target}"
 	done
 	eend 0 2>/dev/null
@@ -1210,7 +1210,7 @@ empty_files(){
 ################ backup files ##############################################
 backup_files(){
 	echo -e "${underline}Looking backup files${restore}"
-	for target in `find ${PORT_ETC} -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \)`;do
+	for target in $(find ${PORT_ETC} -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \));do
 		remove_ask "${target}"
 	done
 	eend 0 2>/dev/null
@@ -1229,7 +1229,7 @@ f_to_d(){
 			while read line;do
 			set -f
 				atom="$(awk '{print $1}' <<< "${line}")"
-				category="$(awk '{print $1}' <<< `qatom ${atom}`)"
+				category="$(awk '{print $1}' <<< "$(qatom "${atom}")")"
 				if [[ "${category}" != "(null)" ]];then
 					category="$(tr -d "<>=~" <<< "${category}" )"
 					[[ "${category}" == "*" ]] && category="all_categories"
@@ -1243,7 +1243,7 @@ f_to_d(){
 			echo -e "${underline}Skipping ${red}directory${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "`ls -d1 ${PORT_ETC}/package* | grep -v "~" || true`"
+	done <<< "$(ls -d1 ${PORT_ETC}/package* | grep -v "~" || true)"
 }
 ############################################################################
 ################ package.* dirs 2 files ####################################
@@ -1254,7 +1254,7 @@ d_to_f(){
 			tmp_file="$(_mktemp)"
 			file="${PORT_ETC}/${package##*/}"
 			touch "${file}"
-			for subfile in `find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort`;do
+			for subfile in $(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort);do
 				while read line;do
 					echo "${line}" >> "${tmp_file}"
 				done < "${subfile}"
@@ -1268,7 +1268,7 @@ d_to_f(){
 			echo -e "${underline}Skipping ${red}file${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "`ls -d1 ${PORT_ETC}/package* | grep -v "~" || true`"
+	done <<< "$(ls -d1 ${PORT_ETC}/package* | grep -v "~" || true)"
 }
 ############################################################################
 ################ version diff ##############################################
@@ -1302,7 +1302,7 @@ package_envs(){
 			slot="${slot#:}"
 			pn="${pn%:}"
 			echo "${sw} ${category} ${pn} ${ver} ${rev:-(null)} ${slot:-(null)} ${file}"
-		done <<< `qatom "${atom}"`
+		done <<< "$(qatom "${atom}")"
 	done
 }
 ############################################################################
@@ -1414,13 +1414,13 @@ mask_trash(){
 remove_trash(){
 	tmp_file="$(_mktemp)"
 	cp "${file}" "${tmp_file}"
-	for atom in `eix -Tc#`;do
+	for atom in $(eix -Tc#);do
 		lines="$(grep "${atom}" "${file}" || true)"
 		while read line;do
 			entry="$(qatom "$(tr -d '<>=~#' <<< "${line}")" | awk '{print $1,$2}' | tr ' ' '/')"
 			if [[ "${atom}" == "${entry}" ]];then
 				if ! eix -qe --installed-masked "${entry}";then
-					if `eix -Iqe ${atom}`;then
+					if eix -Iqe "${atom}" > /dev/null;then
 						echo -e "stupid entry:              ${green}${line}${restore}"
 					else
 						echo -e "stupid entry (${red}!${restore}installed): ${green}${line}${restore}"
@@ -1448,7 +1448,7 @@ stupid_unmask(){
 ################ stupid mask/unmask uses ###################################
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
-		for package in `find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \)`;do
+		for package in $(find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \));do
 			tmp_sort="$(_mktemp)"
 			echo -e "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
@@ -1550,7 +1550,7 @@ regen_world(){
 	fi
 
 	pretend="$(grep -v "blocks" <<< "${pre_pre}" | awk '/^\[/ {print $4}' || true)" && eend 0 2>/dev/null
-	pretend+="$(qlist -CI `emerge -epO system | awk '/\[/ {print $4}'`)"$'\n'
+	pretend+="$(qlist -CI $(emerge -epO system | awk '/\[/ {print $4}'))"$'\n'
 
 	for atom in ${installed};do
 		if ! grep -q "^${atom}$" <<< "${pretend}" && ! grep -q ".*-libs/" <<< "${atom}" && ! grep -q "virtual/" <<< "${atom}";then
@@ -1560,7 +1560,7 @@ regen_world(){
 	done
 	cp "${tmp_world}" "${WORLD}"
 
-	PS3=`echo -e "${contrast}Choose package which you want save:${restore} "`
+	PS3="$(echo -e "${contrast}Choose package which you want save:${restore} ")"
 	choose_target(){
 		select target in ${pretend};do
 			echo "=${target}"
@@ -1681,7 +1681,7 @@ overlays(){
 		repo_path="$(grep " ${repo}$" <<< "${portage_overlays}" | awk '{print $1}' || true)"
 		if [[ -d "${repo_path}" ]];then
 			######## checking symlinks in repo
-			for x in `find "${repo_path}" -type l`;do
+			for x in $(find "${repo_path}" -type l);do
 				target="$(readlink ${x})"
 				if [[ -e "${target}" || -e "${x%/*}/${target}" ]];then
 					good_links+="${target}"$'\n'
@@ -1733,7 +1733,7 @@ overlays(){
 	fi
 
 	choose_target(){
-		PS3=`echo -e "${contrast}Choose repo which you want save:${restore} "`
+		PS3="$(echo -e "${contrast}Choose repo which you want save:${restore} ")"
 		select target in ${UNUSED};do
 			echo "${target}"
 			break
@@ -1777,7 +1777,7 @@ overlays(){
 	fix_deps(){
 		DEP_PATH="/var/cache/edb/dep"
 		TRASH=""
-		for dep_path in `find ${DEP_PATH} -type d`;do
+		for dep_path in $(find ${DEP_PATH} -type d);do
 			repo_path="$(sed "s|${DEP_PATH}||" <<< "${dep_path}")"
 			dep_file="${dep_path}.sqlite"
 			if [[ -n "${repo_path}" ]];then
