@@ -1651,7 +1651,6 @@ overlays(){
 	######### repo over PORTDIR_OVERLAY ----> used by portage
 	local PORTDIR_OVERLAY="$(eix --print PORTDIR_OVERLAY)"
 	portage_pkdir="${PORTDIR_OVERLAY}"
-	unset PORTDIR_OVERLAY
 	for repo_dir in ${portage_pkdir};do
 		[[ -f "${repo_dir}/profiles/repo_name" ]] && repo_name="$(cat "${repo_dir}/profiles/repo_name")"
 		repo_name="${repo_name:-${repo_dir##*/}}"
