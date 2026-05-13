@@ -985,10 +985,10 @@ invalid_uses(){
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		if [[ -n "${IGNORE}" ]];then
-			content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
+			content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
 			[[ -n "${content}" ]] && atoms="$(qatom ${content})"
 		else
-			content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g')"
+			content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g')"
 			[[ -n "${content}" ]] && atoms="$(qatom ${content})"
 		fi
 		count="$(wc -l <<< "${atoms}")"
@@ -1006,10 +1006,10 @@ invalid_uses(){
 				tmp_file="$(_mktemp)"
 				cp "${file}" "${tmp_file}"
 				if [[ -n "${IGNORE}" ]];then
-					content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
+					content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
 					[[ -n "${content}" ]] && atoms="$(qatom ${content})"
 				else
-					content="$(awk '{print $1}' ${file} | tr -d "<>=~" | sed -e 's|^#.*||g')"
+					content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g')"
 					[[ -n "${content}" ]] && atoms="$(qatom ${content})"
 				fi
 				count="$(wc -l <<< "${atoms}")"
@@ -1215,7 +1215,7 @@ f_to_d(){
 		if [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
 			tmp_file="$(_mktemp)"
-			mv ${package} ${tmp_file} 2>/dev/null
+			mv "${package}" "${tmp_file}" 2>/dev/null
 			sed -e 's|^#.*||g' -i "${tmp_file}"
 			dir="${PORT_ETC}/${package##*/}"
 			mkdir "${dir}"
@@ -1236,7 +1236,7 @@ f_to_d(){
 			printf '%b\n' "${underline}Skipping ${red}directory${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "$(ls -d1 ${PORT_ETC}/package* | grep -v "~" || true)"
+	done <<< "$(ls -d1 "${PORT_ETC}"/package* | grep -v "~" || true)"
 }
 ############################################################################
 ################ package.* dirs 2 files ####################################
@@ -1256,12 +1256,11 @@ d_to_f(){
 			mv "${tmp_file}" "${package}" 2>/dev/null
 			chmod 0644 "${package}"
 			eend $? 2>/dev/null
-			rm "${tmp_file}" 2>/dev/null
 		elif [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Skipping ${red}file${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "$(ls -d1 ${PORT_ETC}/package* | grep -v "~" || true)"
+	done <<< "$(ls -d1 "${PORT_ETC}"/package* | grep -v "~" || true)"
 }
 ############################################################################
 ################ version diff ##############################################
