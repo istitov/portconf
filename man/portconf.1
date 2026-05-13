@@ -1,4 +1,4 @@
-.TH PORTCONF 1 "2026-05-12" "portconf 2\.0\.0" "Gentoo Utilities"
+.TH PORTCONF 1 "2026-05-13" "portconf 2\.0\.0" "Gentoo Utilities"
 .SH NAME
 portconf \- /etc/portage configuration cleaner and manager
 .SH SYNOPSIS
@@ -34,8 +34,9 @@ Roll
 back to a previously saved state.
 .TP
 .BR \-s ", " \-\-sort
-Sort entries alphabetically; equivalent to
-.B \-\-use\-sort \-\-keyword\-uniq.
+Sort and deduplicate USE flags, keywords, all
+.I package.*
+files, and profile/use.mask entries.
 .TP
 .BR \-y ", " \-\-yes
 Answer yes to all interactive prompts.
@@ -169,20 +170,37 @@ requires
 .BR eix (1),
 .BR qlist (1),
 .BR qatom (1),
+.BR versionsort (1),
 .BR emerge (1),
+.BR eselect (1),
 and
-.BR eselect (1).
+.BR agrep (1).
+.PP
+.BR qlist (1),
+.BR qatom (1),
+and
+.BR versionsort (1)
+are all part of
+.BR app-portage/portage-utils .
+.BR agrep (1)
+is
+.B sys-apps/agrep
+and is only required by the
+.B \-\-use\-invalid
+and
+.B \-\-use\-full
+operations.
 .SH AUTHORS
 .B portconf
 was written by megabaks.
 .PP
-It is currently maintained by Ivan Titov <iohann.s.titov@gmail.com>.
+It is currently maintained by Ivan S. Titov <iohann.s.titov@gmail.com>.
 .SH REPORTING BUGS
 Report bugs at <https://github.com/istitov/portconf/issues>.
 .SH COPYRIGHT
 Copyright \(co megabaks.
 .br
-Copyright \(co 2026 Ivan Titov.
+Copyright \(co 2026 Ivan S. Titov.
 .br
 License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
 .SH SEE ALSO

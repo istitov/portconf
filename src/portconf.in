@@ -129,7 +129,6 @@ current_profile(){
 	else
 		target="$(readlink /etc/portage/make.profile | sed 's|.*/profiles/||')"
 	fi
-	profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 	USEs="$(sort_passed_uses "${PROFILE}")"
 	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w $(tput cols)
 	unset USEs
@@ -499,7 +498,7 @@ sort_uses(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#.*' | uniq || true)"
+	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
 		for option in \
@@ -586,7 +585,7 @@ sort_keys(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#.*' | uniq || true)"
+	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
 		for option in \
@@ -618,7 +617,7 @@ sort_keys(){
 	rm "${tmp_file}" 2>/dev/null
 	diff_ask "${file}" "${striped}"
 	eend $? 2>/dev/null
-} #2>/dev/null
+}
 ############################################################################
 ################ one_keyword ###############################################
 sort_keywords(){
@@ -1068,7 +1067,12 @@ invalid_uses_make(){
 			line="$(grep "\<${iuse}\>" "${tmp_file}" || true)"
 			[[ -z "${line}" ]] && continue
 			fixed_line="$(sed "s|[- \t]${iuse}||" <<< "${line}")"
-			[[ "${line}" != "${fixed_line}" ]] && sed -e "s|${line%\\}|${fixed_line%\\}|" -i "${tmp_file}"
+			if [[ "${line}" != "${fixed_line}" ]]; then
+				_p="${line%\\}";    _p="${_p//\\/\\\\}"; _p="${_p//|/\\|}"; _p="${_p//./\\.}"
+				_r="${fixed_line%\\}"; _r="${_r//\\/\\\\}"; _r="${_r//|/\\|}"; _r="${_r//&/\\&}"
+				sed -e "s|${_p}|${_r}|" -i "${tmp_file}"
+				unset _p _r
+			fi
 		done
 	fi
 	diff_ask "${makefile}" "${tmp_file}"
@@ -1090,7 +1094,9 @@ not_found(){
 			while IFS= read -r line;do
 				printf '%b\n' "${red}Incorrect:${restore} ${line}"
 				line="${line//'*'/\*}"
-				[[ -n "${line}" ]] && sed -e "s|$line||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+				_pat="${line//\\/\\\\}"; _pat="${_pat//|/\\|}"; _pat="${_pat//./\\.}"
+				[[ -n "${line}" ]] && sed -e "s|${_pat}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+				unset _pat
 				eend $? 2>/dev/null
 			done <<< "${incorrect}"
 			diff_ask "${package}" "${tmp_package}"
@@ -1308,12 +1314,12 @@ all_mask_trash(){
 	MASKED=""
 	UNMASKED=""
 	pre_mask_trash(){
-		masked="$(awk '{print $1}' ${file} | grep -v '^#.*' || true)"
+		masked="$(awk '{print $1}' ${file} | grep -v '^#' || true)"
 		MASKED+="$(package_envs "${masked}")"$'\n'
 	}
 	file_or_dir "package.mask" "Preparing atoms in" "pre_mask_trash" || return 1
 	pre_unmask_trash(){
-		unmasked="$(awk '{print $1}' ${file} | grep -v '^#.*' || true)"
+		unmasked="$(awk '{print $1}' ${file} | grep -v '^#' || true)"
 		UNMASKED+="$(package_envs "${unmasked}")"$'\n'
 	}
 	file_or_dir "package.unmask" "Preparing atoms in" "pre_unmask_trash" || return 1
@@ -1810,7 +1816,7 @@ ${contrast}Common${restore}
 	-rc, --regen-cache:          Create and use temporary eix-cache and some fix for overlays. ${red}Highly recommend!${restore}
 	-b,  --backup:               Create backup for current /etc/portage state.
 	-r,  --restore:              Rolling up /etc/portage to one of available states.
-	-s,  --sort:                 Sort entries alphabetically, --use-sort, --keyword-uniq.
+	-s,  --sort:                 Sort and deduplicate USE flags, keywords, all package.* files, and profile/use.mask.
 	-y,  --yes:                  Auto answer (Yes).
 	-p,  --pretend:              Check only.
 	-h,  -?, h, --help:          This help.
