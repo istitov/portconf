@@ -87,9 +87,9 @@ profile() {
 	fi
 	use="${USE}"
 	if [[ -f "${1}/parent" ]]; then
-		for path in $(cat "${1}/parent");do
+		while IFS= read -r path; do
 			use="$use $(profile "${1}/$path")"
-		done
+		done < "${1}/parent"
 	fi
 	echo "${use}"
 }
@@ -1465,9 +1465,9 @@ profile_masked_uses() {
 		all_uses+="$(grep "^[^#].*$" "${file}" || true)"$'\n'
 	fi
 	if [[ -f "${1}/parent" ]]; then
-		for path in $(cat ${1}/parent);do
+		while IFS= read -r path; do
 			profile_masked_uses "${1}/${path}" "${2}"
-		done
+		done < "${1}/parent"
 	fi
 }
 
@@ -1484,7 +1484,7 @@ use_mask() {
 	[[ -h "/etc/make.profile" ]] && makeprof="/etc/make.profile"
 	[[ -h "/etc/portage/make.profile" ]] && makeprof="/etc/portage/make.profile"
 	for target in $(mask_files);do
-		profile_masked_uses "$(readlink -f ${makeprof})" "${target}"
+		profile_masked_uses "$(readlink -f "${makeprof}")" "${target}"
 	done
 	sort_passed_uses "${all_uses} " | tr "[:space:]" $'\n'
 }
