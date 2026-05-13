@@ -157,7 +157,7 @@ timestamp(){
 repo_fix(){
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
-			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u)"
+			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u || true)"
 			portage_categoties="$(cat "${PORTDIR}/profiles/categories")"
 			if [[ -n "$(grep -v "${portage_categoties}" <<< "${local_categories}" || true)" ]];then
 				if [[ ! -f "${path}/profiles/categories" ]];then
