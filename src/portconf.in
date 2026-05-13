@@ -1626,36 +1626,22 @@ regen_world(){
 ################ unused repo and dep-cache #################################
 overlays(){
 	UNUSED=""
-	link_used=""
-	link_unused=""
 	TRASH_REPO=""
 	bad_links=""
 	used_repos=""
 	good_links=""
-	layman_overlays=""
 	portage_overlays=""
-	########## repo over layman
-	layman_path="$(awk '/storage[[:space:]].*:/ {print $3}' /etc/layman/layman.cfg)"
-	source "${layman_path}/make.conf" 2>/dev/null
-	layman_pkgdir="$(tr '[[:space:]]' $'\n' <<< "${PORTDIR_OVERLAY}" | sed '/^$/d')"
-	for repo_dir in ${layman_pkgdir};do
-		[[ -f "${repo_dir}/profiles/repo_name" ]] && repo_name="$(cat "${repo_dir}/profiles/repo_name")"
-		repo_name="${repo_name:-${repo_dir##*/}}"
-		layman_overlays+="${repo_dir} ${repo_name}"$'\n'
-	done
 
-	all_overlays="${layman_overlays}"
-
-	######### repo over PORTDIR_OVERLAY ----> used by portage
-	local PORTDIR_OVERLAY="$(eix --print PORTDIR_OVERLAY)"
-	portage_pkdir="${PORTDIR_OVERLAY}"
-	for repo_dir in ${portage_pkdir};do
-		[[ -f "${repo_dir}/profiles/repo_name" ]] && repo_name="$(cat "${repo_dir}/profiles/repo_name")"
-		repo_name="${repo_name:-${repo_dir##*/}}"
-		portage_overlays+="${repo_dir} ${repo_name}"$'\n'
-	done
-	all_overlays+="${portage_overlays}"
-	all_overlays="$(sort -u <<< "${all_overlays}" | sed '/^$/d')"
+	######## build repo list from repos.conf
+	portage_overlays="$(
+		{ cat /etc/portage/repos.conf 2>/dev/null
+		  cat /etc/portage/repos.conf/*.conf 2>/dev/null; } |
+		awk '/^\[/{gsub(/[\[\]]/,""); repo=$0; next}
+		     /^location[[:space:]]*=/{
+		       gsub(/^location[[:space:]]*=[[:space:]]*/,"")
+		       if (repo != "DEFAULT") print $0 " " repo
+		     }' | sort -u
+	)"
 
 	######## parent_repo for installed packages
 	echo "Checking installed packages..."
@@ -1687,27 +1673,17 @@ overlays(){
 				fi
 			done < <(find "${repo_path}" -type l)
 		else
-			TRASH_REPO+="repo '${green}${repo}${restore}' used, but not exists in \${PORTDIR_OVERLAY}"$'\n'
+			TRASH_REPO+="repo '${green}${repo}${restore}' used, but not found in repos.conf"$'\n'
 			continue
 		fi
 	done
 
-	####### checking layman_overlays: used by links or not
-	while read path name;do
-		if grep -q "^${path}" <<< "${good_links%$'\n'}";then
-			link_used+="${path} ${name}"$'\n'
-		else
-			link_unused+="${path} ${name}"$'\n'
-		fi
-	done <<< "${layman_overlays%$'\n'}"
-
-	####### looking unused layman repo: by portage, by symlinks
-	while read path name;do
-		if ! grep -q " ${name}$" <<< "${link_used}" && ! grep -q "^${name}$" <<< "${used_repos}";then
-			grep -q " ${name}$" <<< "${layman_overlays}" && UNUSED+="${name}"$'\n'
-		fi
-	done <<< "${all_overlays%$'\n'}"
-	UNUSED="$(sort -u <<< "${UNUSED}")"
+	######## unused overlays: repos.conf entries (excl. gentoo) with no installed packages
+	while IFS= read -r path name; do
+		[[ -z "${name}" || "${name}" == "gentoo" ]] && continue
+		grep -q "^${name}$" <<< "${used_repos}" || UNUSED+="${name}"$'\n'
+	done <<< "${portage_overlays}"
+	UNUSED="$(sort -u <<< "${UNUSED}" | sed '/^$/d')"
 
 	if [[ -n "${bad_links}" ]];then
 		echo "broken symlinks:"
@@ -1804,8 +1780,13 @@ overlays(){
 		fi
 	}
 	ask
-	for repo in ${UNUSED};do
-		layman -d "${repo}"
+	for repo in ${UNUSED}; do
+		if eselect repository remove "${repo}" 2>/dev/null; then
+			eend 0 2>/dev/null
+		else
+			printf '%b\n' "Could not auto-remove ${red}${repo}${restore}: run: eselect repository remove ${repo}"
+			eend 1 2>/dev/null
+		fi
 	done
 	printf '%b\n' "\n${TRASH_REPO}"
 	echo "dep-cache:"
