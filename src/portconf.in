@@ -53,12 +53,22 @@ tmp_categories=""
 COUNT="${COUNT:-10}"
 ############################################################################
 ################ ignore ####################################################
-[[ -n "${IGNORE_CATEGORY}" ]] && IGNORE_CATEGORY="$(sed -e '/^$/d' -e 's/$/\/.*/g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_CATEGORY}")")"
-[[ -n "${IGNORE_PN}" ]] && IGNORE_PN="$(sed -e '/^$/d' -e 's/^/.*\//g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_PN}")")"
-IGNORE="${IGNORE_CATEGORY}
+# Expand IGNORE_CATEGORY and IGNORE_PN (set by /etc/portconf.conf as
+# space-separated names) into newline-separated grep regex patterns:
+#   IGNORE_CATEGORY="dev-lang" → "dev-lang/.*"   (match any package in cat)
+#   IGNORE_PN="gcc"            → ".*/gcc"        (match any cat for pkg)
+# Then join into a single IGNORE pattern.  Factored out of the inline init
+# block so the transformation is unit-testable without parameterising
+# /etc/portconf.conf's hardcoded path.
+_compute_ignore() {
+	[[ -n "${IGNORE_CATEGORY}" ]] && IGNORE_CATEGORY="$(sed -e '/^$/d' -e 's/$/\/.*/g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_CATEGORY}")")"
+	[[ -n "${IGNORE_PN}" ]] && IGNORE_PN="$(sed -e '/^$/d' -e 's/^/.*\//g' <<< "$(tr "[:space:]" $'\n' <<< "${IGNORE_PN}")")"
+	IGNORE="${IGNORE_CATEGORY}
 ${IGNORE_PN}"
-IGNORE="$(sed -e '/^$/d' <<< "${IGNORE}")"
-IGNORE="${IGNORE:-'Hello, LOR! :3'}"
+	IGNORE="$(sed -e '/^$/d' <<< "${IGNORE}")"
+	IGNORE="${IGNORE:-'Hello, LOR! :3'}"
+}
+_compute_ignore
 ############################################################################
 ################ sort_passed_uses ##########################################
 sort_passed_uses(){
@@ -1294,18 +1304,22 @@ ver_btwn(){
 ############################################################################
 package_envs(){
 	for atom in ${1};do
-		while read category pn ver rev slot;do
-			sw="$(grep -o "[<>=~]" <<< "${category}" | tr -d $'\n' || true)"
-			category="${category##${sw}}"
-			[[ "${category}" == "(null)" || "${pn}" == "(null)" ]] && continue
-			if [[ -n "${rev}" && -z "${slot}" ]] && grep -q \: <<< "${rev}";then
-				slot="${rev}"
-				unset rev
-			fi
-			slot="${slot#:}"
-			pn="${pn%:}"
-			echo "${sw} ${category} ${pn} ${ver} ${rev:-(null)} ${slot:-(null)} ${file}"
-		done <<< "$(qatom "${atom}")"
+		# portage-utils 0.97+ default qatom output emits the comparison
+		# operator as a TRAILING field and "<unset>" as a placeholder for
+		# missing PV / SLOT — not the leading-prefix-on-CATEGORY layout the
+		# legacy parser assumed.  Use the -F format to get a stable
+		# tab-separated structure, then normalise every empty position to
+		# the legacy "(null)" placeholder so the consumer-side read at
+		# whitespace boundaries gets seven aligned columns regardless of
+		# which atom shape the user wrote.
+		while IFS=$'\t' read -r cat pn pv pr slot pfx; do
+			[[ "${cat}" == "(null)" || "${pn}" == "(null)" ]] && continue
+			[[ "${pv}" == "<unset>" || -z "${pv}" ]] && pv="(null)"
+			[[ -z "${pr}" ]] && pr="(null)"
+			[[ -z "${slot}" ]] && slot="(null)"
+			[[ -z "${pfx}" ]] && pfx="(null)"
+			echo "${pfx} ${cat} ${pn} ${pv} ${pr} ${slot} ${file}"
+		done <<< "$(qatom -F $'%{CATEGORY}\t%{PN}\t%{PV}\t%[PR]\t%[SLOT]\t%[pfx]' "${atom}")"
 	done
 }
 ############################################################################

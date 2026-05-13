@@ -22,10 +22,15 @@ EXTRA_DIST = \
 	tests/unit/backup.bats \
 	tests/unit/repo_fix.bats \
 	tests/unit/use_makeconf.bats \
+	tests/unit/check_use_masked.bats \
+	tests/unit/world_backup.bats \
+	tests/unit/portconf_conf.bats \
 	tests/integration/test_helper.bash \
 	tests/integration/invalid_uses_make.bats \
 	tests/integration/not_found.bats \
 	tests/integration/invalid_uses.bats \
+	tests/integration/mask_trash.bats \
+	tests/integration/stupid_unmask.bats \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats
