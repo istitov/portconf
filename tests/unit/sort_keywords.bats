@@ -70,18 +70,11 @@ teardown() {
 
 # --- comment handling ---
 
-@test "sort_keywords: whole-line comment NOT stripped (keys() lacks grep -v '#')" {
-	# Unlike sort_uses/sort_keys, the inner keys() function uses plain
-	# `awk | sort -u` with no grep -v '^#' filter.  The '#' token is treated
-	# as an atom name, which regenerates a '# <word>' line — leaving comment
-	# content intact.  This is an inconsistency with the other sort functions.
+@test "sort_keywords: whole-line comment stripped" {
 	printf '%s\n' "# comment" "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
 	sort_keywords
-	run grep "app-misc/foo ~amd64" "${TEST_PORT_ETC}/package.accept_keywords"
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
 	assert_output "app-misc/foo ~amd64"
-	# The file still has 2 lines (comment not removed).
-	run grep -c "." "${TEST_PORT_ETC}/package.accept_keywords"
-	assert_output "2"
 }
 
 @test "sort_keywords: inline comment preserved" {

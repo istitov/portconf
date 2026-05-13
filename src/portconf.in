@@ -527,7 +527,7 @@ sort_uses(){
 	rm "${tmp_file}" 2>/dev/null
 	diff_ask "${file}" "${striped}"
 	eend $? 2>/dev/null
-} 2>/dev/null
+}
 ############################################################################
 ################ package.use ###############################################
 sort_use_file(){
@@ -625,7 +625,7 @@ sort_keywords(){
 	keys(){
 		tmp_file="$(_mktemp)"
 		striped="$(_mktemp)"
-		atoms="$(awk '{print $1}' "${file}" | sort -u)"
+		atoms="$(awk '{print $1}' "${file}" | grep -v '^#' | sort -u)"
 		while read atom;do
 			comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
 			keyword="$(grep "${atom}[[:space:]]" "${file}" | sed -e "s|${atom} ||" -e "s|#.*${comment}||" |\
@@ -1127,7 +1127,11 @@ not_found(){
 		if [[ -n "${line}" && -f "${file}" ]];then
 			tmp_file="$(_mktemp)"
 			cp "${file}" "${tmp_file}"
-			[[ -n "${line}" ]] && sed -e "s|$(echo "$line")$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i "${tmp_file}"
+			# Escape BRE metacharacters and the sed delimiter (|) before
+			# interpolating $line into the substitution pattern.
+			_pat="${line//\\/\\\\}"; _pat="${_pat//|/\\|}"; _pat="${_pat//./\\.}"
+			[[ -n "${line}" ]] && sed -e "s|${_pat}$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i "${tmp_file}"
+			unset _pat
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
 			while IFS= read -r package; do
@@ -1786,7 +1790,7 @@ overlays(){
 		trash="$(fix_deps)"
 		if [[ -n "${trash}" ]];then
 			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|removing:\\${green}|;s|$|\\${restore}|")"
-			rm -rf "${trash}" 2>/dev/null || echo failed && exit 1
+			rm -rf "${trash}" 2>/dev/null || { echo failed; exit 1; }
 		else
 			break
 			
@@ -1809,7 +1813,7 @@ ${contrast}Common${restore}
 	-s,  --sort:                 Sort entries alphabetically, --use-sort, --keyword-uniq.
 	-y,  --yes:                  Auto answer (Yes).
 	-p,  --pretend:              Check only.
-	-h,  -h, -?, h, --help:      This help.
+	-h,  -?, h, --help:          This help.
 ${contrast}\${USE}${restore}
 	-us, --use-sort:             Sort useflags. Remove doubles and preserve only last defined state (on/off).
 	-ui, --use-invalid:          Delete invalid or twice global-defined useflags.
@@ -1820,7 +1824,7 @@ ${contrast}\${KEYWORDS}${restore}:
 	-ku, --keyword-uniq:         Like '-us', but for keywords.
 	-ko, --keyword-one:          Save only latest defined keyword.
 ${contrast}Trash${restore}:
-	-t,   --trash:               Delete not_founded/not_installed entries, empty/backup/unused files.
+	-t,   --trash:               Delete not_found/not_installed atoms, empty/backup/unused files.
 	-ft,  --force-trash:         Delete all not_installed entries.(exclude package.mask file/dir)
 	-sm,  --stupid-mask:         Remove incorrect masked atoms.
 	-sum, --stupid-unmask:       Remove incorrect unmasked atoms.

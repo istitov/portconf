@@ -18,8 +18,8 @@ of the [bash-revival](https://github.com/istitov/bash-revival) project.
 - Check flags across **all available versions** of a package
 
 ### Keywords
-- Sort and deduplicate `package.keywords` / `package.accept_keywords`
-- Keep only the latest defined keyword per atom
+- Sort and deduplicate, preserving the last-defined state per token (`--keyword-uniq`)
+- Keep only the single latest-defined keyword per atom, discarding earlier ones (`--keyword-one`)
 
 ### Atoms
 - Find and remove incorrect, not-found, or not-installed atoms
@@ -35,7 +35,7 @@ of the [bash-revival](https://github.com/istitov/bash-revival) project.
 
 ### Overlays
 - Remove unused repos and stale dependency cache entries
-- Symlink-based ebuild support
+- Detect and offer to remove broken symlinks in overlay repos
 
 ### World
 - Regenerate the world file (with auto-backup)
@@ -83,4 +83,4 @@ PORTCONF_DEFAULT_OPTS="-rc"
 ## License
 
 GNU General Public License v3 or later.
-Original copyright megabaks; maintained fork copyright 2026 Ivan Titov.
+Original copyright megabaks; maintained fork copyright 2026 Ivan S. Titov.

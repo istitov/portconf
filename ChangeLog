@@ -41,6 +41,17 @@
 	* src/portconf.in (repo_fix): Add `|| true` inside the
 	  local_categories command substitution to prevent a pipefail abort
 	  when an overlay has no virtual/ directory.
+	* src/portconf.in (not_found): Add `|| true` to the
+	  `grep -v "${INVALID_FOUNDED}"` pipeline — grep exits 1 on empty
+	  emerge output under set -o pipefail, killing not_found whenever
+	  the INVALID path had already collected atoms.
+	* tests/integration/ (3 files, 15 tests): Integration suite for
+	  the three functions requiring live Portage tools.  eix and emerge
+	  are stubbed in not_found tests (eix -Ttc reads real /etc/portage,
+	  not PORT_ETC); real eix/qatom used for invalid_uses and
+	  invalid_uses_make; agrep stubbed in invalid_uses.  Run separately
+	  with `bats tests/integration/` or `make check-integration`.
+	  Requires app-portage/eix, app-portage/portage-utils, sys-apps/agrep.
 
 2026-05-12  Ivan S. Titov  <iohann.s.titov@gmail.com>
 

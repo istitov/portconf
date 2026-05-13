@@ -1,39 +1,15 @@
-# Shared bats setup for portconf integration tests.
+# Integration-test bats helper.
 #
-# Same load_portconf / make_test_portage infrastructure as the unit helper,
-# plus a tput no-op stub (check_uses uses tput for cursor positioning, which
-# corrupts bats' FD management in a non-TTY environment).
+# Loads shared infrastructure from tests/test_helper.bash, then defines
+# make_test_portage with an extra tput no-op stub.
+#
+# check_uses (called by invalid_uses) uses tput for cursor positioning;
+# in a non-TTY bats environment this corrupts FD management.
 #
 # Each integration test file stubs its own external tools (eix, emerge,
-# qatom, agrep) in setup() or per-test, since the required output varies.
+# qatom, agrep) in setup() or per-test, since required output varies.
 
-: "${BATS_HELPER_DIR:=}"
-_portconf_find_bats_helper() {
-	local lib=$1 d
-	for d in "${BATS_HELPER_DIR}" /usr/share /usr/lib /usr/lib64 /usr/local/share; do
-		[[ "$d" && -f "$d/${lib}/load.bash" ]] && { echo "$d/${lib}/load"; return; }
-	done
-	echo "ERROR: could not find ${lib}/load.bash; set BATS_HELPER_DIR" >&2
-	return 1
-}
-load "$(_portconf_find_bats_helper bats-support)"
-load "$(_portconf_find_bats_helper bats-assert)"
-
-load_portconf() {
-	set --
-	export PORTCONF_NO_MAIN=1
-	local was_errexit=
-	[[ $- == *e* ]] && was_errexit=1
-	local saved_exit_trap
-	saved_exit_trap="$(trap -p EXIT)"
-	set +e
-	# shellcheck source=../../src/portconf.in
-	source "${BATS_TEST_DIRNAME}/../../src/portconf.in"
-	eval "${saved_exit_trap:-trap - EXIT}"
-	[[ $was_errexit ]] && set -e
-	unset PORTCONF_NO_MAIN
-	return 0
-}
+source "${BATS_TEST_DIRNAME}/../test_helper.bash"
 
 make_test_portage() {
 	TEST_PORT_ETC="$(mktemp -d)"

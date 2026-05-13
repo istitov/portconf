@@ -4,6 +4,7 @@ sysconf_DATA = portconf.conf
 
 EXTRA_DIST = \
 	portconf.conf \
+	tests/test_helper.bash \
 	tests/unit/test_helper.bash \
 	tests/unit/scaffolding.bats \
 	tests/unit/sort_passed_uses.bats \
