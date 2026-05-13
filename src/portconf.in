@@ -405,7 +405,7 @@ remove_ask(){
 ############################################################################
 ################ sort_packages #############################################
 sort_uniq_files(){
-	for package in $(find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true);do
+	while IFS= read -r package; do
 		tmp_sort="$(_mktemp)"
 		printf '%b\n' "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
@@ -419,7 +419,7 @@ sort_uniq_files(){
 		sort -u "${tmp_sort}" -o "${tmp_sort}" 2>/dev/null
 		diff_ask "${package}" "${tmp_sort}"
 		eend $? 2>/dev/null
-	done
+	done < <(find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true)
 }
 ############################################################################
 ################ file or dir... ############################################
@@ -449,7 +449,7 @@ file_or_dir(){
 				eend $? 2>/dev/null
 			fi
 		elif [[ -d "${target}" ]];then
-			for f in $(find ${target} -type f \! -name '*~' \! -name '*.bak');do
+			while IFS= read -r f; do
 				file="${f}"
 				if [[ -s "${file}" ]];then
 					printf '%b\n' "${underline}${2}${restore} ${contrast}${file#${PORT_ETC}/}${restore}"
@@ -464,7 +464,7 @@ file_or_dir(){
 					eend $? 2>/dev/null
 					continue
 				fi
-			done
+			done < <(find ${target} -type f \! -name '*~' \! -name '*.bak')
 		fi
 	done
 }
@@ -715,7 +715,7 @@ not_if(){
 }
 
 force_not_installed(){
-	for package in $(find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak');do
+	while IFS= read -r package; do
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}" || true)" ]];then
 			tmp_package="$(_mktemp)"
 			cp "${package}" "${tmp_package}"
@@ -730,15 +730,15 @@ force_not_installed(){
 			remove_ask "${package}"
 			eend $? 2>/dev/null
 		fi
-	done
+	done < <(find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak')
 
-	for x in $(find ${PORT_ETC}/package* -type f);do
+	while IFS= read -r x; do
 		if [[ ! -s "${x}" ]];then
 			printf '%b\n' "${underline}Empty file${restore} ${contrast}${x}${restore}"
 			remove_ask "${x}"
 			eend $? 2>/dev/null
 		fi
-	done
+	done < <(find ${PORT_ETC}/package* -type f)
 }
 ############################################################################
 ################ package.env conf ##########################################
@@ -1003,7 +1003,7 @@ invalid_uses(){
 		diff_ask "${file}" "${tmp_file}"
 		[[ ! -s "${file}" ]] && remove_ask "${file}"
 	elif [[ -d "${PORT_ETC}/package.use" ]];then
-		for f in $(find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak');do
+		while IFS= read -r f; do
 			if [[ -s "${f}" ]];then
 				file="${f}"
 				tmp_file="$(_mktemp)"
@@ -1028,7 +1028,7 @@ invalid_uses(){
 				eend $? 2>/dev/null
 				continue
 			fi
-		done
+		done < <(find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak')
 	fi
 	tput cnorm
 	set +f
@@ -1082,7 +1082,7 @@ not_found(){
 	INVALID_FOUNDED=""
 	printf '%b\n' "${underline}Checking invalid entries${restore}..."
 	TRASH="$(LANG=en eix -Ttc 2>/dev/null)"
-	for package in $(ls -d1 ${PORT_ETC}/package* | grep -v -e "~" -e "\.bak" -e "\.old" || true);do
+	while IFS= read -r package; do
 		incorrect="$(printf '%b\n' "${TRASH}" | tr $'\n' "%" | sed -e "s|.*${package}:||" -e 's|--.*||' -e 's|No.*||'|\
 		tr "%" $'\n' | sed -e '/^$/d' | grep -v "${IGNORE}" || true)"
 		if [[ -n "${incorrect}" && -f "${package}" ]];then
@@ -1098,20 +1098,18 @@ not_found(){
 			diff_ask "${package}" "${tmp_package}"
 		elif [[ -n "${incorrect}" && -d "${package}" ]];then
 			printf '%b\n' "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
-			_save_ifs="${IFS:-}"; IFS=$'\n'
-			for line in ${incorrect};do
-				for file in $(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}');do
+			while IFS= read -r line; do
+				while IFS= read -r file; do
 					tmp_file="$(_mktemp)"
 					cp "${file}" "${tmp_file}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
 					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
 					diff_ask "${file}" "${tmp_file}"
 					eend $? 2>/dev/null
-				done
-			done
-			IFS="${_save_ifs}"; unset _save_ifs
+				done < <(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}')
+			done <<< "${incorrect}"
 		fi
-	done
+	done < <(ls -d1 ${PORT_ETC}/package* | grep -v -e "~" -e "\.bak" -e "\.old" || true)
 
 	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
 
@@ -1201,18 +1199,18 @@ use_makeconf(){
 ################ empty files ###############################################
 empty_files(){
 	printf '%b\n' "${underline}Looking empty files${restore}"
-	for target in $(find ${PORT_ETC} -type f);do
+	while IFS= read -r target; do
 		[[ ! -s "${target}" || -z "$(grep -v "^#" < "${target}" || true)" ]] && remove_ask "${target}"
-	done
+	done < <(find ${PORT_ETC} -type f)
 	eend 0 2>/dev/null
 }
 ############################################################################
 ################ backup files ##############################################
 backup_files(){
 	printf '%b\n' "${underline}Looking backup files${restore}"
-	for target in $(find ${PORT_ETC} -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \));do
+	while IFS= read -r target; do
 		remove_ask "${target}"
-	done
+	done < <(find ${PORT_ETC} -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \))
 	eend 0 2>/dev/null
 }
 ############################################################################
@@ -1254,11 +1252,11 @@ d_to_f(){
 			tmp_file="$(_mktemp)"
 			file="${PORT_ETC}/${package##*/}"
 			touch "${file}"
-			for subfile in $(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort);do
+			while IFS= read -r subfile; do
 				while read line;do
 					echo "${line}" >> "${tmp_file}"
 				done < "${subfile}"
-			done
+			done < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
 			rm -rf "${package}" 2>/dev/null
 			mv "${tmp_file}" "${package}" 2>/dev/null
 			chmod 0644 "${package}"
@@ -1448,7 +1446,7 @@ stupid_unmask(){
 ################ stupid mask/unmask uses ###################################
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
-		for package in $(find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \));do
+		while IFS= read -r package; do
 			tmp_sort="$(_mktemp)"
 			printf '%b\n' "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
@@ -1458,7 +1456,7 @@ sort_uniq_mask_use(){
 
 			diff_ask "${package}" "${tmp_sort}"
 			eend $? 2>/dev/null
-		done
+		done < <(find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \))
 	fi
 }
 
@@ -1680,14 +1678,14 @@ overlays(){
 		repo_path="$(grep " ${repo}$" <<< "${portage_overlays}" | awk '{print $1}' || true)"
 		if [[ -d "${repo_path}" ]];then
 			######## checking symlinks in repo
-			for x in $(find "${repo_path}" -type l);do
+			while IFS= read -r x; do
 				target="$(readlink ${x})"
 				if [[ -e "${target}" || -e "${x%/*}/${target}" ]];then
 					good_links+="${target}"$'\n'
 				else
 					bad_links+="${repo} ${x}"$'\n'
 				fi
-			done
+			done < <(find "${repo_path}" -type l)
 		else
 			TRASH_REPO+="repo '${green}${repo}${restore}' used, but not exists in \${PORTDIR_OVERLAY}"$'\n'
 			continue
@@ -1776,7 +1774,7 @@ overlays(){
 	fix_deps(){
 		DEP_PATH="/var/cache/edb/dep"
 		TRASH=""
-		for dep_path in $(find ${DEP_PATH} -type d);do
+		while IFS= read -r dep_path; do
 			repo_path="$(sed "s|${DEP_PATH}||" <<< "${dep_path}")"
 			dep_file="${dep_path}.sqlite"
 			if [[ -n "${repo_path}" ]];then
@@ -1798,7 +1796,7 @@ overlays(){
 					fi
 				fi
 			fi
-		done
+		done < <(find ${DEP_PATH} -type d)
 		if [[ -n "${TRASH}" ]];then
 			echo "${TRASH}"
 		else
