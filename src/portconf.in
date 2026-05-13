@@ -69,8 +69,10 @@ sort_passed_uses(){
 		uses+=" $(tr "[:space:]" $'\n' <<< "${1}" | grep -e "^${opt#-}$" -e "^-${opt#-}$" | tail -n1 || true)"
 		unset opt
 	done
-	echo ${uses}
-	unset uses
+	local -a _a
+	read -ra _a <<< "${uses}"
+	echo "${_a[*]}"
+	unset uses _a
 }
 ############################################################################
 ################ profile ###################################################
@@ -89,7 +91,7 @@ profile() {
 			use="$use $(profile "${1}/$path")"
 		done
 	fi
-	echo $use
+	echo "${use}"
 }
 
 pre_profile=""
@@ -1020,7 +1022,7 @@ invalid_uses(){
 				[[ ! -s "${file}" ]] && remove_ask "${file}"
 			else
 				printf '%b\n' "${underline}Removing empty file${restore} ${contrast}${f}${restore}"
-				rm ${f} 2>/dev/null
+				rm "${f}" 2>/dev/null
 				eend $? 2>/dev/null
 				continue
 			fi
@@ -1335,6 +1337,8 @@ mask_trash(){
 	###### m->masked; u->unmasked
 	while read msw mcategory mpn mver mrev mslot mfile;do
 		while read usw ucategory upn uver urev uslot ufile;do
+			versions_diff=""
+			versions_btwn=""
 			[[ "${mrev}" == "(null)" ]] && mrev="" || mver="${mver}-${mrev}"
 			[[ "${urev}" == "(null)" ]] && urev="" || uver="${uver}-${urev}"
 			[[ "${mver}" == "(null)" ]] && mver=""
@@ -1529,17 +1533,14 @@ regen_world(){
 	echo "${installed}" > "${WORLD}"
 	printf '%b\n' "Calculating dependencies"
 
-	pre_pre="$(emerge -eopd --columns --with-bdeps=y world 2>"${emerge_log}" || exit 1)"
-
-	if [[ $? == 1 ]];then
+	pre_pre="$(emerge -eopd --columns --with-bdeps=y world 2>"${emerge_log}")" || {
 		mv "${ex_world}" "${WORLD}"
 		cat "${emerge_log}"
 		rm "${tmp_world}" "${emerge_log}"
 		printf '%b\n' "\n${red}ERROR!!!${restore} exit\n"
 		exit 1
-	else
-		rm "${emerge_log}"
-	fi
+	}
+	rm "${emerge_log}"
 
 	pretend="$(grep -v "blocks" <<< "${pre_pre}" | awk '/^\[/ {print $4}' || true)" && eend 0 2>/dev/null
 	pretend+="$(qlist -CI $(emerge -epO system | awk '/\[/ {print $4}'))"$'\n'
