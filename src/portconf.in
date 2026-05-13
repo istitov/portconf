@@ -150,15 +150,15 @@ PORTDIR="${PORTDIR:-/usr/portage}"
 ############################################################################
 ################ timestamp #################################################
 timestamp(){
-	stat -c %Y ${*} 2>/dev/null | sort | tail -n1 || true
+	stat -c %Y "${@}" 2>/dev/null | sort | tail -n1 || true
 }
 ############################################################################
 ################ repo fix ##################################################
 repo_fix(){
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
-			local_categories="$(ls -d1 ${path}/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u)"
-			portage_categoties="$(cat ${PORTDIR}/profiles/categories)"
+			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u)"
+			portage_categoties="$(cat "${PORTDIR}/profiles/categories")"
 			if [[ -n "$(grep -v "${portage_categoties}" <<< "${local_categories}" || true)" ]];then
 				if [[ ! -f "${path}/profiles/categories" ]];then
 					[[ ! -d "${path}/profiles" ]] && mkdir "${path}/profiles" && tmp_categories+=" ${path}/profiles"
@@ -203,8 +203,7 @@ eix_method(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		if [[ "$(eix --print OVERLAY_CACHE_METHOD)" != "parse|ebuild*" ]];then
 			[[ -n "${yes}" ]] && eix_check
-			echo -ne "\n${red}!default 'OVERLAY_CACHE_METHOD'${restore}${contrast}
-Create temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] ";
+			printf '%b' "\n${red}!default 'OVERLAY_CACHE_METHOD'${restore}${contrast}\nCreate temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
@@ -212,7 +211,7 @@ Create temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] ";
 						break;;
 					No | NO | no | N | n )
 						break;;
-					* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+					* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
 				esac
 			done
@@ -227,17 +226,17 @@ Create temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] ";
 ################ backup ####################################################
 backup(){
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
-	tarballs="$(ls -1 --color=never ${BRDIR})"
+	tarballs="$(ls -1 --color=never "${BRDIR}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
 	newest="$(tail -n1 <<< "${tarballs}")"
 	count="$( wc -l <<< "${tarballs}")"
 	count="${count:-0}"
 	if [[ -f "/etc/make.conf" ]];then
-		etc_update="$(timestamp ${PORT_ETC}/{*,*/*,*/*/*,*/*/*/*} /etc/make.conf)"
+		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*} /etc/make.conf)"
 	else
-		etc_update="$(timestamp ${PORT_ETC}/{*,*/*,*/*/*,*/*/*/*})"
+		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*})"
 	fi
-	portconf_update="$(timestamp ${BRDIR}/*)"
+	portconf_update="$(timestamp "${BRDIR}"/*)"
 	portconf_update="${portconf_update:-0}"
 	if (( "${etc_update}" > "${portconf_update}" ));then
 		if (( "${count}" >= "${COUNT}" ));then
@@ -261,13 +260,13 @@ backup(){
 world_backup(){
 	world_dir="${BRDIR}/world"
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
-	tarballs="$(ls -1 --color=never ${world_dir})"
+	tarballs="$(ls -1 --color=never "${world_dir}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
 	newest="$(tail -n1 <<< "${tarballs}")"
 	count="$( wc -l <<< "${tarballs}")"
 	count="${count:-0}"
-	world_update="$(timestamp ${WORLD})"
-	portconf_update="$(timestamp ${world_dir}/*)"
+	world_update="$(timestamp "${WORLD}")"
+	portconf_update="$(timestamp "${world_dir}"/*)"
 	portconf_update="${portconf_update:-0}"
 	if (( "${world_update}" > "${portconf_update}" ));then
 		if (( "${count}" >= "${COUNT}" ));then
@@ -285,7 +284,7 @@ world_backup(){
 ############################################################################
 ################ restore ###################################################
 restore(){
-	tarballs="$(ls -1 --color=never ${1}/*.bz2)"
+	tarballs="$(ls -1 --color=never "${1}"/*.bz2)"
 	tarballs="${tarballs//${1}\/}"
 	tarballs="${tarballs//.tar.bz2/}"
 	tarballs="${tarballs//${2}_/}"
@@ -313,7 +312,7 @@ world_restore(){
 ################ diff_ask ##################################################
 diff_ask(){
 	full_diff=""
-	my_diff="$(diff ${1} ${2} | grep --color=never "[[:digit:]][a-z][[:digit:]]" || true)"
+	my_diff="$(diff "${1}" "${2}" | grep --color=never "[[:digit:]][a-z][[:digit:]]" || true)"
 	if [[ -n "${my_diff}" ]];then
 		while read subj;do
 			old_num="$(tr ',' ' ' <<< "${subj%[a-z]*}")"
@@ -344,7 +343,7 @@ diff_ask(){
 		printf '%b\n' "${full_diff%\\n}" | column -s \^ -t
 		echo "###############################################"
 		if [[ -z "${yes}" && -z "${PRETEND}" ]];then
-			echo -ne "${contrast}Apply changes?${restore} [${green}Yes${restore}/${red}No${restore}] ";
+			printf '%b' "${contrast}Apply changes?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
@@ -361,7 +360,7 @@ diff_ask(){
 						unset full_diff
 						rm "${2}" 2>/dev/null
 						return 0;;
-					* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+					* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
 				esac
 			done
@@ -383,7 +382,7 @@ diff_ask(){
 ################ remove_ask ################################################
 remove_ask(){
 	if [[ -z "${yes}" && -z "${PRETEND}" ]];then
-		echo -ne "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
+		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
 		while read x;do
 			case ${x} in
 				Yes | YES | yes | Y | y | "" )
@@ -391,7 +390,7 @@ remove_ask(){
 					break;;
 				No | NO | no | N | n )
 					break;;
-				* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+				* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 					continue;;
 			esac
 		done
@@ -417,18 +416,18 @@ sort_uniq_files(){
 			echo "${atom} ${opts//$'\n'/ }" >> "${tmp_sort}"
 		done <<< "${all_atoms}"
 
-		sed -e '/^$/d' -e 's/[ \t]*$//' -i ${tmp_sort}
+		sed -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_sort}"
 		sort -u "${tmp_sort}" -o "${tmp_sort}" 2>/dev/null
 		diff_ask "${package}" "${tmp_sort}"
 		eend $? 2>/dev/null
-	done < <(find ${PORT_ETC}/ -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true)
+	done < <(find "${PORT_ETC}/" -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true)
 }
 ############################################################################
 ################ file or dir... ############################################
 file_or_dir(){
 	local founded=""
 	for i in ${1};do
-		founded+=" $(ls -d1 ${PORT_ETC}/${i} 2>/dev/null)"
+		founded+=" $(ls -d1 "${PORT_ETC}/"${i} 2>/dev/null)"
 	done
 	if [[ -z "${founded}" ]];then
 		printf '%b\n' "${underline}${2}${restore}${contrast}${PORT_ETC}/${1}${restore}: No such file or directory${restore}"
@@ -466,7 +465,7 @@ file_or_dir(){
 					eend $? 2>/dev/null
 					continue
 				fi
-			done < <(find ${target} -type f \! -name '*~' \! -name '*.bak')
+			done < <(find "${target}" -type f \! -name '*~' \! -name '*.bak')
 		fi
 	done
 }
@@ -476,7 +475,7 @@ rm_comments(){
 	no_newline(){
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
-		sed -e "s|^#.*||g" -e '/^$/d' -i ${tmp_file}
+		sed -e "s|^#.*||g" -e '/^$/d' -i "${tmp_file}"
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
@@ -488,7 +487,7 @@ rm_all_comments(){
 	no_newline_inline(){
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
-		sed -e "s|#.*||g" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
+		sed -e "s|#.*||g" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_file}"
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
@@ -500,11 +499,11 @@ sort_uses(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq || true)"
+	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#.*' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
 		for option in \
-		"$(grep "^${atom//\*/\\*}[[:space:]]" ${file} | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
+		"$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
 			atom_opts+="${option}"
 		done
 		uses="$(sort_passed_uses "${atom_opts}")"
@@ -586,11 +585,11 @@ sort_keys(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' ${file} | grep -v '^#.*' | uniq || true)"
+	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#.*' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
 		for option in \
-		"$(grep "^${atom//\*/\\*}[[:space:]]" ${file} | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
+		"$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
 			atom_opts+="${option}"
 		done
 		keys="$(sort_passed_uses "${atom_opts}")"
@@ -628,7 +627,7 @@ sort_keywords(){
 		atoms="$(awk '{print $1}' "${file}" | sort -u)"
 		while read atom;do
 			comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-			keyword="$(grep "${atom}[[:space:]]" ${file} | sed -e "s|${atom} ||" -e "s|#.*${comment}||" |\
+			keyword="$(grep "${atom}[[:space:]]" "${file}" | sed -e "s|${atom} ||" -e "s|#.*${comment}||" |\
 						tr "[:space:]" $'\n' | sed '/^$/d' | tail -n1 || true)"
 			keyword="${keyword:-"~${ARCH}"}"
 			if [[ -n "${comment}" ]];then
@@ -676,7 +675,7 @@ installed(){
 }
 
 not_if(){
-	atoms="$(awk '{print $1}' <<< "$(grep -v "^#" < ${package})" || true)"
+	atoms="$(awk '{print $1}' <<< "$(grep -v "^#" < "${package}")" || true)"
 	[[ -n "${IGNORE}" ]] && atoms="$(grep -v "${IGNORE}" <<< "${atoms}" || true)"
 	printf '%b\n' "${underline}Checking${restore} ${contrast}$package${restore}"
 	if [[ -n "${atoms}" ]];then
@@ -732,7 +731,7 @@ force_not_installed(){
 			remove_ask "${package}"
 			eend $? 2>/dev/null
 		fi
-	done < <(find ${PORT_ETC}/package* -type f \! -name '*~' \! -name '*.bak')
+	done < <(find "${PORT_ETC}"/package* -type f \! -name '*~' \! -name '*.bak')
 
 	while IFS= read -r x; do
 		if [[ ! -s "${x}" ]];then
@@ -740,16 +739,16 @@ force_not_installed(){
 			remove_ask "${x}"
 			eend $? 2>/dev/null
 		fi
-	done < <(find ${PORT_ETC}/package* -type f)
+	done < <(find "${PORT_ETC}"/package* -type f)
 }
 ############################################################################
 ################ package.env conf ##########################################
 package_env_conf(){
-	all_confs="$(find ${PORT_ETC}/env/ -maxdepth 1 -type f)"
+	all_confs="$(find "${PORT_ETC}/env/" -maxdepth 1 -type f)"
 	all_confs="${all_confs//${PORT_ETC////\/}\/env\//}"
 	check_env_conf(){
 		USED_ENV=""
-		atoms="$(sed 's/^[ \t]*//;s/[ \t]*$//;/^#/d;/^$/d;' < ${file} | awk '{print $1}')"
+		atoms="$(sed 's/^[ \t]*//;s/[ \t]*$//;/^#/d;/^$/d;' < "${file}" | awk '{print $1}')"
 		while read line;do
 			line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
 			for atom in ${atoms};do
@@ -800,9 +799,9 @@ env_not_installed(){
 	RM=""
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
 	for x in "env" "env.d";do
-		files="$(find ${PORT_ETC}/${x}/ -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null | cut -d\/ -f5- || true)"
+		files="$(find "${PORT_ETC}/${x}/" -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null | cut -d\/ -f5- || true)"
 		[[ -n "${IGNORE}" ]] && files="$(grep -v "${IGNORE}" <<< "${files}" || true)"
-		dirs="$(find ${PORT_ETC}/${x}/ -type d 2>/dev/null || true)"
+		dirs="$(find "${PORT_ETC}/${x}/" -type d 2>/dev/null || true)"
 		[[ -n "${IGNORE}" ]] && dirs="$(grep -v "${IGNORE}" <<< "${dirs}" || true)"
 		[[ -n "${files}" || -n "${dirs}" ]] || break
 
@@ -822,7 +821,7 @@ env_not_installed(){
 				slot="${slot#:}"
 
 				if [[ -z "${ver}" && -z "${slot}" ]];then
-					if ! ls -d1 ${PKGDB}/${category}/${pn}-[0-9]* &>/dev/null;then
+					if ! ls -d1 "${PKGDB}/${category}/${pn}"-[0-9]* &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
@@ -830,7 +829,7 @@ env_not_installed(){
 				fi
 
 				if [[ -n "${ver}" && -z "${slot}" ]] ;then
-					if ! ls -d1 ${PKGDB}/${category}/${pn}-${full_ver} &>/dev/null;then
+					if ! ls -d1 "${PKGDB}/${category}/${pn}-${full_ver}" &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}-${full_ver}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
@@ -838,7 +837,7 @@ env_not_installed(){
 				fi
 
 				if [[ -z "${ver}" && -n "${slot}" ]] ;then
-					if [[ -z "$(cat ${PKGDB}/${category}/${pn}-[0-9]*/SLOT 2>/dev/null | grep ${slot} || true)" ]];then
+					if [[ -z "$(cat "${PKGDB}/${category}/${pn}"-[0-9]*/SLOT 2>/dev/null | grep "${slot}" || true)" ]];then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}:${slot}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
@@ -885,7 +884,7 @@ invalid_uses(){
 				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
 				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 				strfxd="${category}/${pn} ${usefxd}"
-				sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
+				sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null
 				eend $? 2>/dev/null
 			done <<< "${strings}"
 		}
@@ -898,7 +897,7 @@ invalid_uses(){
 				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
 				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 				strfxd="${category}/${pn} ${usefxd}"
-				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i ${tmp_file} 2>/dev/null
+				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null
 				eend $? 2>/dev/null
 			done <<< "${strings}"
 		}
@@ -908,7 +907,7 @@ invalid_uses(){
 		while read category pn ver slot;do
 			tput el
 			tput el1
-			echo -ne "["; printf "% ${chars}d" $((count--));echo -ne " ]" "atoms left" 2>/dev/null
+			printf '['; printf "% ${chars}d" $((count--)); printf ' ] atoms left' 2>/dev/null
 			tput rc
 
 			ALL_USE=" $(eix -e "${category}/${pn}")" || continue
@@ -1026,7 +1025,7 @@ invalid_uses(){
 				eend $? 2>/dev/null
 				continue
 			fi
-		done < <(find ${PORT_ETC}/package.use/ -type f \! -name '*~' \! -name '*.bak')
+		done < <(find "${PORT_ETC}/package.use/" -type f \! -name '*~' \! -name '*.bak')
 	fi
 	tput cnorm
 	set +f
@@ -1034,8 +1033,8 @@ invalid_uses(){
 ############################################################################
 ################ incorrect uses in make.conf ###############################
 make_conf_use() {
-	defined_flags="$(grep "${1}=\".*\"" ${makefile} || true)"
-	defined_flags="${defined_flags:-"$(sed -ne "/${1}=\"/,/\"/p" ${makefile})"}"
+	defined_flags="$(grep "${1}=\".*\"" "${makefile}" || true)"
+	defined_flags="${defined_flags:-"$(sed -ne "/${1}=\"/,/\"/p" "${makefile}")"}"
 	echo "${defined_flags}"
 }
 
@@ -1057,7 +1056,7 @@ invalid_uses_make(){
 		sub_uses="$(make_conf_use ${var} | hell_parser | grep -v '\$' || true)"
 		for use in ${sub_uses};do
 			if ! grep -q "^${use}$" <<< "${real_uses}" && [[ "${use}" != "*" ]];then
-				echo -ne "Invalid use ${contrast} ${var}: ${red}${use}${restore}" | column -t
+				printf '%b' "Invalid use ${contrast} ${var}: ${red}${use}${restore}" | column -t
 				invalid_uses+=" ${use}"
 			fi
 		done
@@ -1065,7 +1064,7 @@ invalid_uses_make(){
 
 	if [[ -n "${invalid_uses}" ]];then
 		for iuse in ${invalid_uses};do
-			line="$(grep "\<${iuse}\>" ${tmp_file} || true)"
+			line="$(grep "\<${iuse}\>" "${tmp_file}" || true)"
 			[[ -z "${line}" ]] && continue
 			fixed_line="$(sed "s|[- \t]${iuse}||" <<< "${line}")"
 			[[ "${line}" != "${fixed_line}" ]] && sed -e "s|${line%\\}|${fixed_line%\\}|" -i "${tmp_file}"
@@ -1090,7 +1089,7 @@ not_found(){
 			while read line;do
 				printf '%b\n' "${red}Incorrect:${restore} ${line}"
 				line="${line//'*'/\*}"
-				[[ -n "${line}" ]] && sed -e "s|$line||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package} 2>/dev/null
+				[[ -n "${line}" ]] && sed -e "s|$line||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null
 				eend $? 2>/dev/null
 			done <<< "${incorrect}"
 			diff_ask "${package}" "${tmp_package}"
@@ -1101,13 +1100,13 @@ not_found(){
 					tmp_file="$(_mktemp)"
 					cp "${file}" "${tmp_file}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
-					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_file}
+					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_file}"
 					diff_ask "${file}" "${tmp_file}"
 					eend $? 2>/dev/null
 				done < <(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}')
 			done <<< "${incorrect}"
 		fi
-	done < <(ls -d1 ${PORT_ETC}/package* | grep -v -e "~" -e "\.bak" -e "\.old" || true)
+	done < <(ls -d1 "${PORT_ETC}"/package* | grep -v -e "~" -e "\.bak" -e "\.old" || true)
 
 	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
 
@@ -1127,14 +1126,14 @@ not_found(){
 		if [[ -n "${line}" && -f "${file}" ]];then
 			tmp_file="$(_mktemp)"
 			cp "${file}" "${tmp_file}"
-			[[ -n "${line}" ]] && sed -e "s|$(echo "$line")$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
+			[[ -n "${line}" ]] && sed -e "s|$(echo "$line")$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i "${tmp_file}"
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
 			while IFS= read -r package; do
 					tmp_package="$(_mktemp)"
 					cp "${package}" "${tmp_package}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
-					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package}
+					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}"
 					diff_ask "${package}" "${tmp_package}"
 					eend $? 2>/dev/null
 			done < <(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}')
@@ -1181,10 +1180,10 @@ use_makeconf(){
 		if [[ -n ${flag} ]];then
 			if grep -q "^${flag}$" <<< "${USE}" && grep -q "^${flag}$" <<< "${PROFILE}";then
 				printf '%b\n' "Twice defined: ${red}${use}${restore}"
-				sed -e "s|[^[:punct:]]\<${flag}\>||g" -i ${tmp_file}
+				sed -e "s|[^[:punct:]]\<${flag}\>||g" -i "${tmp_file}"
 			elif grep -q "^-${flag}$" <<< "${USE}" && grep -q "^-${flag}$" <<< "${PROFILE}";then
 				printf '%b\n' "Twice defined: ${red}-${use}${restore}"
-				sed -e "s|[^[:punct:]]\-\<${flag}\>||g" -i ${tmp_file}
+				sed -e "s|[^[:punct:]]\-\<${flag}\>||g" -i "${tmp_file}"
 			fi
 		fi
 	done <<< "${PROFILE}"
@@ -1197,7 +1196,7 @@ empty_files(){
 	printf '%b\n' "${underline}Looking empty files${restore}"
 	while IFS= read -r target; do
 		[[ ! -s "${target}" || -z "$(grep -v "^#" < "${target}" || true)" ]] && remove_ask "${target}"
-	done < <(find ${PORT_ETC} -type f)
+	done < <(find "${PORT_ETC}" -type f)
 	eend 0 2>/dev/null
 }
 ############################################################################
@@ -1206,7 +1205,7 @@ backup_files(){
 	printf '%b\n' "${underline}Looking backup files${restore}"
 	while IFS= read -r target; do
 		remove_ask "${target}"
-	done < <(find ${PORT_ETC} -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \))
+	done < <(find "${PORT_ETC}" -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \))
 	eend 0 2>/dev/null
 }
 ############################################################################
@@ -1454,7 +1453,7 @@ sort_uniq_mask_use(){
 
 			diff_ask "${package}" "${tmp_sort}"
 			eend $? 2>/dev/null
-		done < <(find ${PORT_ETC}/profile -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \))
+		done < <(find "${PORT_ETC}/profile" -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \))
 	fi
 }
 
@@ -1570,14 +1569,14 @@ regen_world(){
 		pretend="$(emerge -pc | grep 'All selected packages:' | sed 's|.*:||1' | tr ' ' $'\n' || true)"
 		printf '%b\n' "\n${pretend// /$'\n'}"
 		if [[ -n "$(sed '/^$/d' <<< "${pretend}")" ]];then
-			echo -ne "\n${contrast}Would you like save some packages?${restore} [${green}Yes${restore}/${red}No${restore}] "
+			printf '%b' "\n${contrast}Would you like save some packages?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				[[ -z "$(sed '/^$/d' <<< "${pretend}")" ]] && break
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
 						add_in_world;
 						while [[ -z "${enough}" && "$(echo "${pretend// /$'\n'}" | sed '/^$/d' | wc -l)" != "0" ]];do
-							echo -ne "${contrast}More?${restore} [${green}Yes${restore}/${red}No${restore}] "
+							printf '%b' "${contrast}More?${restore} [${green}Yes${restore}/${red}No${restore}] "
 							while read y;do
 								case ${y} in
 									Yes | YES | yes | Y | y | "" )
@@ -1586,7 +1585,7 @@ regen_world(){
 									No | NO | no | N | n )
 										enough="1"
 										break;;
-									* ) echo -ne "Sorry, response '${y}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+									* ) printf '%b' "Sorry, response '${y}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 										continue;;
 								esac
 							done
@@ -1594,7 +1593,7 @@ regen_world(){
 						break;;
 					No | NO | no | N | n )
 						break;;
-					* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+					* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
 				esac
 			done
@@ -1647,7 +1646,7 @@ overlays(){
 		tput el1
 		output="${i#${PKGDB}/}"
 		output="${output%/repository}"
-		echo -n "${output}"
+		printf '%s' "${output}"
 		tput rc
 		used_repos+="$(grep -sv '^gentoo$' "${i}" || true)"$'\n'
 	done
@@ -1683,7 +1682,7 @@ overlays(){
 	if [[ -n "${bad_links}" ]];then
 		echo "broken symlinks:"
 		echo "${bad_links}"
-		echo -ne "\n${contrast}Would you like remove?${restore} [${green}Yes${restore}/${red}No${restore}] "
+		printf '%b' "\n${contrast}Would you like remove?${restore} [${green}Yes${restore}/${red}No${restore}] "
 		while read z;do
 			case ${z} in
 				Yes | YES | yes | Y | y | "" )
@@ -1694,7 +1693,7 @@ overlays(){
 					break;;
 				No | NO | no | N | n )
 					break;;
-				* ) echo -ne "Sorry, response '${z}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+				* ) printf '%b' "Sorry, response '${z}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 					continue;;
 			esac
 		done
@@ -1710,14 +1709,14 @@ overlays(){
 	ask(){
 		[[ -n "${UNUSED}" ]] && printf '%b\n' "Unused repos:\n${UNUSED}"
 		if [[ -n "$(sed '/^$/d' <<< "${UNUSED}")" ]];then
-			echo -ne "\n${contrast}Would you like save some repo(s)?${restore} [${green}Yes${restore}/${red}No${restore}] "
+			printf '%b' "\n${contrast}Would you like save some repo(s)?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				[[ -z "$(sed '/^$/d' <<< "${UNUSED}")" ]] && break
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
 						UNUSED="$(grep -v "^$(choose_target)$" <<< "${UNUSED}" || true)"
 						while [[ -z "${enough}" && "$(echo "${UNUSED// /$'\n'}" | sed '/^$/d' | wc -l)" != "0" ]];do
-							echo -ne "${contrast}More?${restore} [${green}Yes${restore}/${red}No${restore}] "
+							printf '%b' "${contrast}More?${restore} [${green}Yes${restore}/${red}No${restore}] "
 							while read y;do
 								case ${y} in
 									Yes | YES | yes | Y | y | "" )
@@ -1726,7 +1725,7 @@ overlays(){
 									No | NO | no | N | n )
 										enough="1"
 										break;;
-									* ) echo -ne "Sorry, response '${y}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+									* ) printf '%b' "Sorry, response '${y}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 										continue;;
 								esac
 							done
@@ -1734,7 +1733,7 @@ overlays(){
 						break;;
 					No | NO | no | N | n )
 						break;;
-					* ) echo -ne "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
+					* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
 				esac
 			done
@@ -1767,7 +1766,7 @@ overlays(){
 					fi
 				fi
 			fi
-		done < <(find ${DEP_PATH} -type d)
+		done < <(find "${DEP_PATH}" -type d)
 		if [[ -n "${TRASH}" ]];then
 			echo "${TRASH}"
 		else
