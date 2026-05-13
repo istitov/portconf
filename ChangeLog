@@ -1,4 +1,4 @@
-2026-05-13  Ivan Titov  <iohann.s.titov@gmail.com>
+2026-05-13  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.0_pre5 — "Under Test"
 
@@ -42,7 +42,7 @@
 	  local_categories command substitution to prevent a pipefail abort
 	  when an overlay has no virtual/ directory.
 
-2026-05-12  Ivan Titov  <iohann.s.titov@gmail.com>
+2026-05-12  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	Revival: 2.0.0 — "Back From 2014"
 
