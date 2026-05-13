@@ -1,3 +1,47 @@
+2026-05-13  Ivan Titov  <iohann.s.titov@gmail.com>
+
+	2.0.0_pre5 — "Under Test"
+
+	Comprehensive modernisation of the inherited script plus a full
+	bats unit test suite covering every function that can be exercised
+	without live Portage tools (eix / emerge / agrep).
+
+	Style and safety (pre2):
+	* src/portconf.in: Replace all backtick command substitutions with
+	  $().  Replace echo -e with printf '%b\n' throughout.  Full
+	  quoting audit — fix all unquoted variable expansions.
+	* src/portconf.in: set -euo pipefail enforced from line 4;
+	  || true guards added to grep/diff used in command substitutions.
+	  set -u + explicit initialisation of all accumulator variables.
+	  Trap-based temp-file cleanup (_tmpfiles array / _cleanup).
+	* src/portconf.in (overlays): Remove stray `unset PORTDIR_OVERLAY`
+	  after local declaration.  Replace all for-in-$(find/ls) loops
+	  with while IFS= read -r + process substitution.  Replace layman
+	  with repos.conf parsing.  Eliminate IFS-manipulation workaround
+	  loops.
+
+	Correctness (pre3–pre4):
+	* src/portconf.in: 12 bugs corrected across three audit rounds,
+	  including profile parent-traversal, use_mask path quoting, IFS=
+	  on every read call, and variable-quoting issues in sed/grep
+	  patterns.
+
+	Tests (pre5):
+	* tests/unit/test_helper.bash: Shared bats helper.  Saves and
+	  restores bats' EXIT trap around the portconf.in source call
+	  (portconf sets `trap _cleanup EXIT` at load time, silently
+	  overwriting bats' own teardown trap under set -e).  Stubs
+	  eend/ebegin to prevent the _update_tty_level 0<&1 FD-corruption
+	  crash inside bats subprocesses.
+	* tests/unit/ (16 files, 136 tests): Unit suite covering
+	  diff_ask, f_to_d/d_to_f, sort_uses/sort_use_file, empty_files/
+	  backup_files, sort_uniq_files, uniq_keywords, sort_keywords,
+	  sort_uniq_mask_use, ver_diff/ver_btwn, timestamp, backup,
+	  repo_fix/rm_repo_fix, use_makeconf.
+	* src/portconf.in (repo_fix): Add `|| true` inside the
+	  local_categories command substitution to prevent a pipefail abort
+	  when an overlay has no virtual/ directory.
+
 2026-05-12  Ivan Titov  <iohann.s.titov@gmail.com>
 
 	Revival: 2.0.0 — "Back From 2014"
