@@ -1,0 +1,99 @@
+#!/usr/bin/env bats
+# Tests for sort_keywords — the "keep only the last defined keyword" pass
+# for package.keywords / package.accept_keywords.
+#
+# Contrast with uniq_keywords (sort_keys): that uses sort_passed_uses and
+# combines all keyword tokens for an atom.  sort_keywords instead picks the
+# very last keyword token found for each atom (via tail -n1), discarding all
+# earlier ones.  Useful for collapsing a chain of overrides down to the final
+# effective keyword.
+#
+# Falls back to "~${ARCH}" when an atom has no keyword in the file.
+# stupid_keywords is stubbed so tests are host-profile-independent.
+
+load 'test_helper'
+
+setup() {
+	load_portconf
+	make_test_portage
+	stupid_keywords() { :; }
+}
+
+teardown() {
+	teardown_test_portage
+}
+
+# --- unchanged content ---
+
+@test "sort_keywords: single atom single keyword — unchanged" {
+	printf '%s\n' "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~amd64"
+}
+
+@test "sort_keywords: two distinct atoms — both preserved" {
+	printf '%s\n' "app-misc/foo ~amd64" "dev-libs/baz **" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run grep -c "." "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "2"
+	run grep "app-misc/foo ~amd64" "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~amd64"
+	run grep "dev-libs/baz \*\*" "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "dev-libs/baz **"
+}
+
+# --- last-keyword-wins (contrast with uniq_keywords which keeps all) ---
+
+@test "sort_keywords: two keywords for same atom — last one kept" {
+	printf '%s\n' "app-misc/foo ~amd64" "app-misc/foo **" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo **"
+}
+
+@test "sort_keywords: three keywords for same atom — only last one kept" {
+	printf '%s\n' "app-misc/foo ~amd64" "app-misc/foo **" "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~amd64"
+}
+
+# --- default keyword ---
+
+@test "sort_keywords: atom without keyword — gets ~ARCH added" {
+	printf '%s\n' "app-misc/foo" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~${ARCH}"
+}
+
+# --- comment handling ---
+
+@test "sort_keywords: whole-line comment NOT stripped (keys() lacks grep -v '#')" {
+	# Unlike sort_uses/sort_keys, the inner keys() function uses plain
+	# `awk | sort -u` with no grep -v '^#' filter.  The '#' token is treated
+	# as an atom name, which regenerates a '# <word>' line — leaving comment
+	# content intact.  This is an inconsistency with the other sort functions.
+	printf '%s\n' "# comment" "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run grep "app-misc/foo ~amd64" "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~amd64"
+	# The file still has 2 lines (comment not removed).
+	run grep -c "." "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "2"
+}
+
+@test "sort_keywords: inline comment preserved" {
+	printf '%s\n' "app-misc/foo ~amd64 # testing" > "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "app-misc/foo ~amd64 # testing"
+}
+
+@test "sort_keywords: works on package.keywords too" {
+	printf '%s\n' "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.keywords"
+	assert_output "app-misc/foo ~amd64"
+}

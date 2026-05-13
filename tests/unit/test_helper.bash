@@ -36,9 +36,18 @@ load_portconf() {
 	export PORTCONF_NO_MAIN=1
 	local was_errexit=
 	[[ $- == *e* ]] && was_errexit=1
+	# Save bats' EXIT trap before sourcing portconf.in.
+	# portconf.in runs `trap _cleanup EXIT` at source time, which silently
+	# replaces bats' own teardown trap.  When set -e later fires on a failing
+	# assertion the shell exits via _cleanup instead of bats_teardown_trap,
+	# so the test result is never reported and bats warns "Executed 0 tests".
+	local saved_exit_trap
+	saved_exit_trap="$(trap -p EXIT)"
 	set +e
 	# shellcheck source=../../src/portconf.in
 	source "${BATS_TEST_DIRNAME}/../../src/portconf.in"
+	# Restore whichever trap bats had registered before the source.
+	eval "${saved_exit_trap:-trap - EXIT}"
 	[[ $was_errexit ]] && set -e
 	unset PORTCONF_NO_MAIN
 	return 0
