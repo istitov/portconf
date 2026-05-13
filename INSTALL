@@ -38,6 +38,27 @@ portconf requires the following tools at runtime:
 The -rc / --regen-cache option (strongly recommended) also requires eix-update.
 
 
+Running the test suite
+----------------------
+Unit tests (no runtime tools required beyond bats):
+
+    make check                  # or: bats tests/unit/
+
+Integration tests exercise not_found, invalid_uses, and invalid_uses_make
+against real Portage tooling.  The following must be on PATH:
+
+    app-portage/eix
+    app-portage/portage-utils   (qatom)
+    sys-apps/agrep (or equivalent agrep implementation)
+
+Run with:
+
+    make check-integration      # or: bats tests/integration/
+
+Integration tests read /etc/portage directly via eix -Ttc and are therefore
+host-sensitive: they expect a working, populated Portage tree.
+
+
 Configuration
 -------------
 A sample configuration file is installed to /etc/portconf.conf.
