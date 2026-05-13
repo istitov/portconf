@@ -5,9 +5,11 @@
 # qatom to test the USE-flag validation logic.
 #
 # Test atom: sys-apps/grep — a core package present in every Gentoo tree.
-# "static" is a valid USE flag for sys-apps/grep that is NOT in the global
-# USE settings on this host (nls/pcre/verify-sig are global and would be
-# removed by the "redundant global" path — a separate, correct behaviour).
+# "static" is a long-stable IUSE entry for sys-apps/grep used as the
+# "known-valid" flag.  PROFILE and MAKE_USES are forced empty by
+# make_test_portage so GLOBAL is empty by default — invalid_uses' "redundant
+# global" code path is covered by a dedicated test that sets PROFILE
+# explicitly, rather than relying on whatever the host happens to inherit.
 # "not_a_real_use_flag_xyz" is a synthetic token eix will never recognise.
 #
 # Stubs:
@@ -65,5 +67,17 @@ teardown() {
 		> "${PORT_ETC}/package.use"
 	invalid_uses
 	run grep 'not_a_real_use_flag_xyz' "${PORT_ETC}/package.use"
+	assert_failure
+}
+
+@test "invalid_uses: flag already in GLOBAL is removed as redundant" {
+	# When a flag is set in PROFILE or MAKE_USES, declaring it again per-atom
+	# is redundant — invalid_uses strips it.  PROFILE is normally derived from
+	# the live profile tree; we set it explicitly here to make the test
+	# host-independent.
+	PROFILE="static"
+	printf 'sys-apps/grep static\n' > "${PORT_ETC}/package.use"
+	invalid_uses
+	run grep 'static' "${PORT_ETC}/package.use"
 	assert_failure
 }

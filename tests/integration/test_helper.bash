@@ -16,6 +16,12 @@ make_test_portage() {
 	PORT_ETC="${TEST_PORT_ETC}"
 	yes="1"
 	PRETEND=""
+	# PROFILE and MAKE_USES are computed from the live host (/etc/make.profile
+	# and /etc/portage/make.conf) at portconf.in source time.  Reset them so
+	# integration tests start from a known-empty GLOBAL USE set; tests that
+	# need to exercise GLOBAL-related code paths set these explicitly.
+	PROFILE=""
+	MAKE_USES=""
 	eend()   { return "${1:-0}"; }
 	ebegin() { :; }
 	tput()   { :; }

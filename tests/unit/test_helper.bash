@@ -15,6 +15,11 @@ make_test_portage() {
 	PORT_ETC="${TEST_PORT_ETC}"
 	yes="1"
 	PRETEND=""
+	# PROFILE and MAKE_USES are computed from the live host at source time;
+	# reset them so tests start from a known baseline (use_makeconf tests set
+	# them per-test, others remain unaffected).
+	PROFILE=""
+	MAKE_USES=""
 	# Gentoo's eend calls _update_tty_level which does `0<&1` (stdin ← stdout),
 	# corrupting bats' internal fd management and killing the test subprocess.
 	# Replace with a no-op that just returns the given exit code.
