@@ -845,17 +845,13 @@ env_not_installed(){
 			done <<< "${atom}"
 		done <<< "${files}"
 
-		_save_ifs="${IFS:-}"
-		IFS="%"
-		for target in ${RM%\%};do
+		while IFS='%' read -r target; do
+			[[ -z "${target}" ]] && continue
 			remove_ask "${target}"
-		done
-		IFS=$'\n'
-		for target in ${dirs};do
-			[[ -z "$(ls ${target})" ]] && remove_ask "${target}"
-		done
-		IFS="${_save_ifs}"
-		unset _save_ifs
+		done <<< "${RM%\%}"
+		while IFS= read -r target; do
+			[[ -z "$(ls "${target}")" ]] && remove_ask "${target}"
+		done <<< "${dirs}"
 	done
 	eend $? 2>/dev/null
 }
@@ -1113,9 +1109,8 @@ not_found(){
 
 	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
 
-	_save_ifs="${IFS:-}"; IFS=$'\n'
-	for string in ${INVALID};do
-		[[ -z "${string}" ]] && break
+	while IFS= read -r string; do
+		[[ -z "${string}" ]] && continue
 		file="$(awk -F ':' '{print $1}' <<< "${string}")"
 		file="${file##* }"
 		file="${file//[[:space:]]/}"
@@ -1133,18 +1128,17 @@ not_found(){
 			[[ -n "${line}" ]] && sed -e "s|$(echo "$line")$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i ${tmp_file}
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
-			for package in $(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}');do
+			while IFS= read -r package; do
 					tmp_package="$(_mktemp)"
 					cp "${package}" "${tmp_package}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
 					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i ${tmp_package}
 					diff_ask "${package}" "${tmp_package}"
 					eend $? 2>/dev/null
-			done
+			done < <(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}')
 		fi
 		eend $? 2>/dev/null
-	done
-	IFS="${_save_ifs}"; unset _save_ifs
+	done <<< "${INVALID}"
 
 	##### don't quote it! #####
 	if [[ -n "${INVALID_FOUNDED}" ]];then
