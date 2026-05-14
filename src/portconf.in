@@ -16,11 +16,18 @@ set -euo pipefail
 EINFO_QUIET="${EINFO_QUIET:-}"
 ############################################################################
 ################ colors ####################################################
-green="\033[01;32m"
-red="\033[01;31m"
-restore="\033[00m"
-contrast="\033[1m"
-underline="\033[4m"
+# ANSI color codes are emitted only when stdout is a TTY AND NO_COLOR is
+# unset (https://no-color.org).  Piping output to a file or grep would
+# otherwise leak terminal escape sequences into machine-readable output.
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+	green="\033[01;32m"
+	red="\033[01;31m"
+	restore="\033[00m"
+	contrast="\033[1m"
+	underline="\033[4m"
+else
+	green=""; red=""; restore=""; contrast=""; underline=""
+fi
 ############################################################################
 ################ cleanup ###################################################
 _tmpfiles=()
@@ -32,6 +39,51 @@ _mktemp() {
 	f="$(mktemp "$@")"
 	_tmpfiles+=("$f")
 	printf '%s\n' "$f"
+}
+
+# Escape a string for use as the PATTERN in `sed s|pattern|repl|` with '|'
+# as the delimiter.  Handles backslash (must be first to avoid double-
+# escaping), the delimiter itself, and the basic-regex metacharacters
+# that come up in user-controlled atom strings (.,[,*,^,$).  Output the
+# escaped value so callers can interpolate it directly.
+#
+# Used to harden every `sed -e "s|.*${atom}.*|...|"` call site against
+# atoms with USE-dep brackets (`sys-apps/grep[static]`), versions with
+# dots (`>=sys-apps/grep-3.0`), and wildcards (`*/depend-on-me-*`).
+_sed_escape_pat() {
+	local s="$1"
+	s="${s//\\/\\\\}"; s="${s//|/\\|}"
+	s="${s//./\\.}";  s="${s//\[/\\[}"
+	s="${s//\*/\\*}"; s="${s//^/\\^}"
+	s="${s//\$/\\\$}"
+	printf '%s' "$s"
+}
+
+# Escape a string for use as the REPLACEMENT in `sed s|pat|repl|` with '|'
+# as the delimiter.  Different rules: only \, |, and & need escaping in
+# the replacement side.
+_sed_escape_rep() {
+	local s="$1"
+	s="${s//\\/\\\\}"; s="${s//|/\\|}"; s="${s//&/\\&}"
+	printf '%s' "$s"
+}
+
+# tput wrapper that no-ops when stdout isn't a TTY.  Cursor-control codes
+# (sc, civis, el, el1, rc, cnorm) corrupt output when emitted to a pipe
+# or file, and tput itself errors when $TERM is unset or dumb.
+_tput() {
+	[[ -t 1 ]] && tput "$@" 2>/dev/null || true
+}
+
+# Return terminal column count, falling back to 80 in non-TTY contexts.
+# Used inside `fold -s -w $(_cols)` pipelines that line-wrap profile USE
+# listings.
+_cols() {
+	if [[ -t 1 ]]; then
+		tput cols 2>/dev/null || echo 80
+	else
+		echo 80
+	fi
 }
 ############################################################################
 ################ init ######################################################
@@ -122,7 +174,7 @@ all_use_all_profiles(){
 	for target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(tput cols)
+		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
 		unset USEs
 	done
 }
@@ -133,7 +185,7 @@ profile_use(){
 	select target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(tput cols)
+		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
 		unset USEs
 		break
 	done
@@ -147,7 +199,7 @@ current_profile(){
 		target="$(readlink "${PORT_ETC}/make.profile" | sed 's|.*/profiles/||')"
 	fi
 	USEs="$(sort_passed_uses "${PROFILE}")"
-	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w $(tput cols)
+	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
 	unset USEs
 }
 ############################################################################
@@ -566,7 +618,11 @@ sort_uses(){
 	cp "${tmp_file}" "${striped}" 2>/dev/null
 
 	while read atom opt;do
-		[[ -z "${opt}" ]] && sed -e "s|^${atom} ||" -i "${striped}" 2>/dev/null
+		# `${atom}` can contain sed-regex metacharacters (`.` in versions,
+		# `[` in USE-dep brackets, `*` in glob deps).  Escape before
+		# interpolating; otherwise the in-place edit silently misses
+		# entries that don't match the regex literally.
+		[[ -z "${opt}" ]] && sed -e "s|^$(_sed_escape_pat "${atom}") ||" -i "${striped}" 2>/dev/null
 		unset atom opt
 	done < "${tmp_file}"
 	sed -e 's/[ \t]*$//' -e '/^$/d' -e 's|  | |g' -e "s| - | |g" -i "${striped}" 2>/dev/null
@@ -654,8 +710,13 @@ sort_keys(){
 	cp "${tmp_file}" "${striped}" 2>/dev/null
 
 	while read atom opt;do
-		[[ -z "${opt}" ]] && sed -e "s|^${atom}[ \t]$|${atom} ~${ARCH}|;s|^${atom}$|${atom} ~${ARCH}|" -i "${striped}" 2>/dev/null
-		unset atom opt
+		# Same escaping reasoning as sort_uses above — atoms can carry
+		# sed metacharacters in their version / USE-dep / wildcard parts.
+		local _ap _ar
+		_ap="$(_sed_escape_pat "${atom}")"
+		_ar="$(_sed_escape_rep "${atom}")"
+		[[ -z "${opt}" ]] && sed -e "s|^${_ap}[ \t]$|${_ar} ~${ARCH}|;s|^${_ap}$|${_ar} ~${ARCH}|" -i "${striped}" 2>/dev/null
+		unset atom opt _ap _ar
 	done < "${tmp_file}"
 
 	sed -e 's/[ \t]*$//' -e '/^$/d' -e 's|  | |g' -e "s| - | |g" -i "${striped}" 2>/dev/null
@@ -755,8 +816,15 @@ not_if(){
 					else
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
 					fi
-					sed -e "s|.*\<${category}/${pn}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+					# Escape category/pn before sed interpolation.  Atom
+					# parts from qatom are constrained (no `|`/`*`/`[`)
+					# but `.` shows up in atoms with x.y-style component
+					# names (`gtk2.0`, etc.) and would silently misalign.
+					local _cp
+					_cp="$(_sed_escape_pat "${category}/${pn}")"
+					sed -e "s|.*\<${_cp}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null
 					eend $? 2>/dev/null
+					unset _cp
 				fi
 			done <<< "$(qatom "${atom}")"
 		done <<< "${atoms}"
@@ -923,6 +991,12 @@ env_not_installed(){
 ############################################################################
 ################ incorrect uses ############################################
 invalid_uses(){
+	# `local -` (bash 4.4+) snapshots the current shell-option state and
+	# restores it on function return, no matter how we exit (normal, set
+	# -e abort, explicit return).  Pairs the `set -f` below — without it,
+	# an early return inside this 170-line function would leave globbing
+	# disabled for every subsequent dispatch step.
+	local -
 	set -f
 	incorrect_use=""
 	global_use=""
@@ -966,13 +1040,13 @@ invalid_uses(){
 			done <<< "${strings}"
 		}
 
-		tput sc
-		tput civis
+		_tput sc
+		_tput civis
 		while read category pn ver slot;do
-			tput el
-			tput el1
+			_tput el
+			_tput el1
 			printf '['; printf "% ${chars}d" $((count--)); printf ' ] atoms left' 2>/dev/null
-			tput rc
+			_tput rc
 
 			ALL_USE=" $(eix -e "${category}/${pn}")" || continue
 			ALL_USE="$(sed -e 's| +| |g;s| -| |g;s|(+)||g;s|(-)||g' <<< "${ALL_USE}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
@@ -1059,8 +1133,8 @@ invalid_uses(){
 		((count--))
 		chars="$(wc -m <<< "${count}")"
 		check_uses;
-		tput el;
-		tput cnorm;
+		_tput el;
+		_tput cnorm;
 		diff_ask "${file}" "${tmp_file}"
 		[[ ! -s "${file}" ]] && remove_ask "${file}"
 	elif [[ -d "${PORT_ETC}/package.use" ]];then
@@ -1080,7 +1154,7 @@ invalid_uses(){
 				((count--))
 				chars="$(wc -m <<< "${count}")"
 				check_uses;
-				tput cnorm
+				_tput cnorm
 				diff_ask "${file}" "${tmp_file}"
 				[[ ! -s "${file}" ]] && remove_ask "${file}"
 			else
@@ -1091,8 +1165,8 @@ invalid_uses(){
 			fi
 		done < <(find "${PORT_ETC}/package.use/" -type f \! -name '*~' \! -name '*.bak')
 	fi
-	tput cnorm
-	set +f
+	_tput cnorm
+	# `local -` at function entry restores set -f state on return.
 }
 ############################################################################
 ################ incorrect uses in make.conf ###############################
@@ -1109,6 +1183,8 @@ hell_parser(){
 
 invalid_uses_make(){
 	invalid_uses=""
+	# See invalid_uses for the `local -` rationale.
+	local -
 	set -f
 	printf '%b\n' "${underline}Checking use flags in${restore} ${contrast}${makefile}${restore}"
 	tmp_file="$(_mktemp)"
@@ -1140,7 +1216,7 @@ invalid_uses_make(){
 		done
 	fi
 	diff_ask "${makefile}" "${tmp_file}"
-	set +f
+	# `local -` at function entry restores set -f state on return.
 }
 ############################################################################
 ################ not_found #################################################
@@ -1225,6 +1301,11 @@ not_found(){
 	fi
 	broken_files="$(awk '{print $1}' <<< "${invalid}" | sort -u)"
 	invalid_lines(){
+		# Localise the set -f scope to this inner function via `local -`.
+		# The `local` builtin keys off the enclosing function scope, so
+		# even though this is nested inside not_found, the restoration
+		# fires when invalid_lines returns (not when not_found returns).
+		local -
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
 		set -f
@@ -1233,7 +1314,6 @@ not_found(){
 			sed -e "s|^$(printf '%s' "${line}").*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
 		done <<< "${tlines}"
 		diff_ask "${file}" "${tmp_file}"
-		set +f
 	}
 	if [[ -n "${invalid}" ]];then
 		for bad_file in ${broken_files};do
@@ -1286,6 +1366,10 @@ backup_files(){
 ############################################################################
 ################ package.* files 2 dirs ####################################
 f_to_d(){
+	# Guard the `set -f` inside the inner read loop below with `local -`
+	# so a mid-loop early-exit doesn't leave globbing disabled for the
+	# rest of the dispatch chain.
+	local -
 	while IFS= read -r package;do
 		if [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
@@ -1767,19 +1851,19 @@ overlays(){
 
 	######## parent_repo for installed packages
 	echo "Checking installed packages..."
-	tput sc
-	tput civis
+	_tput sc
+	_tput civis
 	for i in ${PKGDB}/*/*/repository;do
-		tput el
-		tput el1
+		_tput el
+		_tput el1
 		output="${i#${PKGDB}/}"
 		output="${output%/repository}"
 		printf '%s' "${output}"
-		tput rc
+		_tput rc
 		used_repos+="$(grep -sv '^gentoo$' "${i}" || true)"$'\n'
 	done
-	tput el
-	tput cnorm
+	_tput el
+	_tput cnorm
 	used_repos="$(sort -u <<< "${used_repos%$'\n'}")"
 
 	for repo in ${used_repos};do
