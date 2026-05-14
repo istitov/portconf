@@ -2,3 +2,11 @@ portconf was written by megabaks <https://github.com/megabaks>.
 
 It is currently maintained by Ivan S. Titov <iohann.s.titov@gmail.com>
 at <https://github.com/istitov/portconf>.
+
+    The 2.0.0 modernization (autotools build, 280-test bats suite across
+    three tiers, env-overridable system path roots, qatom 0.97+ parser
+    rewrite, 15 latent bugs fixed) was carried out with heavy use of the
+    Claude large-language model (Anthropic) as a coding assistant; every
+    change was reviewed by hand and validated against the bats unit /
+    integration / smoke layers, shellcheck, and `make distcheck` before
+    landing.  See the 2.0.0 entry in ChangeLog for per-commit detail.

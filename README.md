@@ -13,6 +13,11 @@ suite across three tiers (unit / integration / smoke), env-overridable system
 paths for sandboxing, and 15 latent bugs fixed.  See [`ChangeLog`](ChangeLog)
 for the full breakdown.
 
+The 2.0.0 modernization was carried out with heavy use of the Claude
+large-language model (Anthropic) as a coding assistant; every change was
+reviewed by hand and validated against the bats unit, integration, and
+smoke test layers, shellcheck, and `make distcheck` before landing.
+
 ---
 
 ## What it does

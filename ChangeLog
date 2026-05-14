@@ -26,6 +26,11 @@
 	Build:
 	* configure.ac: bump to 2.0.0.
 
+	* AI-assisted: the 2.0.0 modernization work used Claude
+	  (Anthropic) as a coding assistant.  Every change was reviewed
+	  by hand and validated against the bats unit, integration, and
+	  smoke layers, shellcheck, and `make distcheck` before landing.
+
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.0_rc2 — "First CI Run Cleanup"
@@ -356,6 +361,8 @@
 	* AUTHORS: megabaks as original author; istitov as maintainer.
 	* INSTALL: Gentoo-specific installation notes.
 
-	AI disclosure: build system, man page, and metadata files in this
-	release were authored with AI assistance (Claude, Anthropic).  The
-	portconf script itself is unchanged from megabaks's original.
+	* AI-assisted: the build system, man page, and metadata files in
+	  this release were authored with Claude (Anthropic) as a coding
+	  assistant.  The portconf script itself is unchanged from
+	  megabaks's original.  Every generated change was reviewed by
+	  hand before landing.
