@@ -133,5 +133,9 @@ jobs:
       - name: bats smoke suite (real Portage tree)
         run: make check-smoke
 
+      # distcheck (vs plain dist) extracts the tarball into a subdir and
+      # runs configure + make + make check + make install + make uninstall
+      # against it — catches missing EXTRA_DIST entries and srcdir-vs-builddir
+      # bugs that a plain `make dist` would not surface.
       - name: dist tarball sanity-check
-        run: make dist
+        run: make distcheck
