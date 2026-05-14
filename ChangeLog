@@ -1,5 +1,41 @@
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
+	2.0.0_rc2 — "First CI Run Cleanup"
+
+	Fixes 5 shellcheck --severity=error violations that the rc1 CI run
+	on gentoo/stage3:latest surfaced.  shellcheck wasn't installed on
+	the local dev host, so make distcheck passed locally but the CI
+	`shellcheck --severity=error src/portconf` step failed before any
+	test tier ran.  All five are non-portable or buggy-but-working-by-
+	accident patterns, no observable behaviour change — all 280 bats
+	tests still pass.
+
+	* src/portconf.in (sort_uses, sort_keywords): SC2066 — the
+	  `for option in "$(...)"` loop pattern (double-quoted command
+	  substitution) iterates exactly once.  Replaced with a direct
+	  `atom_opts+="$(...)"` append; same semantics, less code.
+	* src/portconf.in (mask_trash slot_output / non_slot_output):
+	  SC2104 — `continue 2` inside an inner function works in bash
+	  (the directive propagates up through the function call to the
+	  enclosing loop) but is non-portable.  Refactored: the helpers
+	  set `_trash_hit=1`; the inner unmask loop adds
+	      (( _trash_hit )) && break
+	  at the end of its body.  Same control-flow effect — break inner
+	  → outer continues naturally — without the function-level loop
+	  magic.  Per-outer-iteration `_trash_hit=0` reset added.
+	* src/portconf.in (dispatcher tail): SC2199 — `[[ -z "${@}" ]]`
+	  works only because `${@}` implicitly concatenates inside [[ ]].
+	  Replaced with `[[ $# -eq 0 ]]`.
+
+	Build:
+	* configure.ac: bump to 2.0.0_rc2.
+
+	Note: the rc1 tag and the rc1 ChangeLog entry below are preserved
+	verbatim — rc1 was a real (failed-CI) state.  rc2 is the same source
+	tree plus the 5 shellcheck fixes.
+
+2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
 	2.0.0_rc1 — "Audited Pretty Far Down"
 
 	Post-pre6 hardening round.  Critical code review of the pre6 tree
