@@ -1,48 +1,19 @@
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
-	2.0.0 — "Released"
+	2.0.0_rc2 — "First CI Run + Packaging Polish"
 
-	First final release of the maintained fork.  rc1 + rc2 baked in
-	through three CI cycles on gentoo/stage3:latest; 281 bats tests
-	passing (178 unit + 70 integration + 32 smoke + 1 root-conditional)
-	plus a clean shellcheck pass.
-
-	Since rc2:
-	* src/portconf.in: shellcheck cosmetic pass — 18 warning-level
-	  findings down to 3.  Dead variables removed (newest in backup/
-	  world_backup; installed_vers / installed_min_ver / installed_-
-	  max_ver / installed_live_ver in check_uses).  ${*} for the opts
-	  assembly (was implicit ${@}-as-string).  Quoted `$(_cols)` in
-	  the three fold-pipeline sites.  `# shellcheck disable=` and
-	  `# shellcheck source=/dev/null` directives at the four runtime-
-	  resolved source-call sites and the variadic _mktemp forwarder
-	  and the intentional column-placeholder `read` in mask_trash.
-	  No behaviour change — diff is comments + idiomatic spellings
-	  + 7 lines of dead code removed.
-	* The remaining 3 warnings are SC2010 (`ls | grep`) patterns in
-	  repo_fix / f_to_d / d_to_f.  Functional rewrites; explicitly
-	  deferred to 2.1.0.
-
-	Build:
-	* configure.ac: bump to 2.0.0.
-
-	* AI-assisted: the 2.0.0 modernization work used Claude
-	  (Anthropic) as a coding assistant.  Every change was reviewed
-	  by hand and validated against the bats unit, integration, and
-	  smoke layers, shellcheck, and `make distcheck` before landing.
-
-2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
-
-	2.0.0_rc2 — "First CI Run Cleanup"
-
-	Fixes 5 shellcheck --severity=error violations that the rc1 CI run
-	on gentoo/stage3:latest surfaced.  shellcheck wasn't installed on
-	the local dev host, so make distcheck passed locally but the CI
+	Three CI cycles on gentoo/stage3:latest after rc1 surfaced 5
+	shellcheck --severity=error violations (rc1 dev host didn't have
+	shellcheck installed locally; make distcheck passed but the CI
 	`shellcheck --severity=error src/portconf` step failed before any
-	test tier ran.  All five are non-portable or buggy-but-working-by-
-	accident patterns, no observable behaviour change — all 280 bats
-	tests still pass.
+	test tier ran).  Fixes for all five are below, plus the routine
+	work of preparing the audited tree for release: Gentoo ebuilds,
+	editor/shellcheck config baselines, a CI-locked dist sanity-check,
+	GitHub issue templates and contribution guide, AI-assistance
+	disclosure.  281 bats tests pass (178 unit + 70 integration +
+	32 smoke + 1 root-conditional) against a shellcheck-clean source.
 
+	Source-side fixes:
 	* src/portconf.in (sort_uses, sort_keywords): SC2066 — the
 	  `for option in "$(...)"` loop pattern (double-quoted command
 	  substitution) iterates exactly once.  Replaced with a direct
@@ -59,13 +30,103 @@
 	* src/portconf.in (dispatcher tail): SC2199 — `[[ -z "${@}" ]]`
 	  works only because `${@}` implicitly concatenates inside [[ ]].
 	  Replaced with `[[ $# -eq 0 ]]`.
+	* src/portconf.in: SC2199-fix comment rephrasing — shellcheck
+	  parsed `# shellcheck SC2199: ...` as a directive (the canonical
+	  form is `disable=SCxxxx`) and bailed with SC1072/SC1073 on the
+	  second CI run.  Comment now starts with prose; the SC2199
+	  reference is preserved in the body.
+
+	Cosmetic shellcheck pass:
+	* src/portconf.in: 18 warning-level findings down to 3.  Dead
+	  variables removed (newest in backup / world_backup;
+	  installed_vers / installed_min_ver / installed_max_ver /
+	  installed_live_ver in check_uses).  ${*} for the opts assembly
+	  (was implicit ${@}-as-string).  Quoted `$(_cols)` in the three
+	  fold-pipeline sites.  `# shellcheck disable=` and
+	  `# shellcheck source=/dev/null` directives at the four runtime-
+	  resolved source-call sites and the variadic _mktemp forwarder
+	  and the intentional column-placeholder `read` in mask_trash.
+	  No behaviour change — diff is comments + idiomatic spellings +
+	  7 lines of dead code removed.
+	* The remaining 3 warnings are SC2010 (`ls | grep`) patterns in
+	  repo_fix / f_to_d / d_to_f.  Functional rewrites; explicitly
+	  deferred to 2.1.0.
+
+	Tests:
+	* tests/unit/diff_ask.bats: root-conditional Yes-branch coverage.
+	  The existing "interactive Yes as non-root — exits 1" test
+	  passes only as a non-root UID; CI on gentoo/stage3:latest runs
+	  as root and would hit the mv+chmod branch instead.  Gated with
+	  `(( UID == 0 )) && skip`, plus a complementary root-branch
+	  test gated with `(( UID != 0 )) && skip`.  Together they cover
+	  both branches in their respective environments.
+
+	Packaging:
+	* packaging/portconf.ebuild.in: EAPI=8 release ebuild for the
+	  ::stuff overlay.  RDEPEND covers bash 4.4+, eix, portage-utils,
+	  tre, portage; bash-completion is optional.  src_test runs the
+	  unit suite, probes the eix cache, and conditionally runs the
+	  integration suite when the cache is populated.  pkg_postinst
+	  reminds about eix-update.
+	* packaging/portconf-9999.ebuild: live ebuild inheriting git-r3,
+	  no KEYWORDS, with autoconf/automake added to BDEPEND and
+	  eautoreconf in src_prepare.
+	* packaging/metadata.xml: maintainer, longdesc, USE flag docs,
+	  GitHub remote-id.
+	* packaging/Makefile.am: `make ebuild OVERLAY_DIR=...` recipe
+	  drops a versioned ebuild + metadata.xml into the given overlay
+	  and runs `ebuild ... manifest` to fetch the dist tarball and
+	  write Manifest.  Top-level Makefile.am delegates.
 
 	Build:
+	* .editorconfig: whitespace rules for shells, bats, ebuilds,
+	  autoconf, YAML, ChangeLog.  Shipped in EXTRA_DIST.
+	* .shellcheckrc: encodes the SC2010 deferrals (3 sites in
+	  repo_fix / f_to_d / d_to_f) so local shellcheck matches CI
+	  behaviour.
+	* Makefile.am: new installcheck-local target — verifies installed
+	  $(bindir)/portconf reports the expected version and that
+	  --help works.  Honors DESTDIR for staging installs.
 	* configure.ac: bump to 2.0.0_rc2.
 
+	CI:
+	* .github/workflows/ci.yml: dist sanity-check switched from
+	  `make dist` to `make distcheck`.  `make dist` only produces the
+	  tarball; `make distcheck` extracts it into an isolated subdir
+	  and runs configure + make + make check + make install + make
+	  uninstall against it — catches missing EXTRA_DIST entries,
+	  srcdir-vs-builddir bugs, and install-target breakage that plain
+	  `make dist` would not surface.
+
+	Docs:
+	* README.md: CI status badge, markdown links for ChangeLog +
+	  INSTALL, ::stuff overlay add-overlay URL.
+	* AUTHORS, README.md, ChangeLog: AI usage disclosure block —
+	  Claude (Anthropic) used as a coding assistant; every change
+	  reviewed by hand and validated against bats unit + integration
+	  + smoke + shellcheck + make distcheck before landing.
+	* CONTRIBUTING.md: contribution guide covering bug reports,
+	  feature proposals, PR workflow (with the new-flag checklist),
+	  commit messages, code style, signing, license.
+	* .github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml:
+	  GitHub issue forms — version + environment + command output +
+	  expected/actual + relevant /etc/portage file content (with
+	  flag-to-file pairing table); minimal feature template.
+	* ChangeLog: corrected stale commit-hash references and the
+	  broken rebrand from-to in the rc1 and pre6 entries; added the
+	  missing smoke-helper entries (help.bats, profile.bats) to pre6;
+	  updated test-count, bug-count, and `|| true` figures to match
+	  current state.
+
 	Note: the rc1 tag and the rc1 ChangeLog entry below are preserved
-	verbatim — rc1 was a real (failed-CI) state.  rc2 is the same source
-	tree plus the 5 shellcheck fixes.
+	verbatim — rc1 was a real (failed-CI) state.  rc2 is the same
+	source tree plus the post-rc1 fixes, the cosmetic shellcheck
+	pass, packaging, configs, CI hardening, and contribution docs.
+
+	* AI-assisted: the 2.0.0_rc2 work used Claude (Anthropic) as a
+	  coding assistant.  Every change was reviewed by hand and
+	  validated against the bats unit, integration, and smoke layers,
+	  shellcheck, and `make distcheck` before landing.
 
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
