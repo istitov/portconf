@@ -19,5 +19,6 @@ AC_CONFIG_FILES([
     src/Makefile
     man/Makefile
     completion/Makefile
+    packaging/Makefile
 ])
 AC_OUTPUT

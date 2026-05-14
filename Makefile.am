@@ -1,4 +1,4 @@
-SUBDIRS = src man completion
+SUBDIRS = src man completion packaging
 
 sysconf_DATA = portconf.conf
 
@@ -94,4 +94,11 @@ check-smoke:
 	done
 	$(BATS) $(srcdir)/tests/smoke/
 
-.PHONY: check-integration check-smoke
+# 'make ebuild OVERLAY_DIR=...' delegates to packaging/Makefile.am, which
+# drops a versioned ebuild + metadata.xml into the given overlay path
+# and runs `ebuild ... manifest` to fetch the dist tarball and write
+# Manifest.  See packaging/Makefile.am for the exact recipe.
+ebuild:
+	$(MAKE) -C packaging ebuild OVERLAY_DIR=$(OVERLAY_DIR)
+
+.PHONY: check-integration check-smoke ebuild
