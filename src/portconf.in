@@ -6,8 +6,10 @@
 # Source Gentoo helpers before strict mode: functions.sh uses ${KSH_VERSION}
 # without a default and is not set -u-safe.
 if [[ -f "/lib/gentoo/functions.sh" ]]; then
+	# shellcheck source=/dev/null
 	source /lib/gentoo/functions.sh
 else
+	# shellcheck source=/dev/null  # glob path; resolved at runtime
 	source /usr/lib*/portage/bin/isolated-functions.sh
 fi
 set -euo pipefail
@@ -34,6 +36,7 @@ _tmpfiles=()
 _cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; :; }
 trap _cleanup EXIT
 
+# shellcheck disable=SC2120  # variadic forwarder — most callers don't pass args, but the function still accepts and forwards them when given.
 _mktemp() {
 	local f
 	f="$(mktemp "$@")"
@@ -76,7 +79,7 @@ _tput() {
 }
 
 # Return terminal column count, falling back to 80 in non-TTY contexts.
-# Used inside `fold -s -w $(_cols)` pipelines that line-wrap profile USE
+# Used inside `fold -s -w "$(_cols)"` pipelines that line-wrap profile USE
 # listings.
 _cols() {
 	if [[ -t 1 ]]; then
@@ -106,6 +109,7 @@ COUNT=""
 PORTDIR_OVERLAY=""
 tmp_categories=""
 PORTCONF_CONF="${PORTCONF_CONF:-/etc/portconf.conf}"
+# shellcheck source=/dev/null  # user-supplied at runtime; not statically resolvable
 [[ -f "${PORTCONF_CONF}" ]] && . "${PORTCONF_CONF}"
 COUNT="${COUNT:-10}"
 ############################################################################
@@ -174,7 +178,7 @@ all_use_all_profiles(){
 	for target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
+		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w "$(_cols)"
 		unset USEs
 	done
 }
@@ -185,7 +189,7 @@ profile_use(){
 	select target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
 		USEs="$(sort_passed_uses "${profile_uses}")"
-		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
+		printf '%b\n' "\n${green}${target}${restore}: ${USEs}" | fold -s -w "$(_cols)"
 		unset USEs
 		break
 	done
@@ -199,7 +203,7 @@ current_profile(){
 		target="$(readlink "${PORT_ETC}/make.profile" | sed 's|.*/profiles/||')"
 	fi
 	USEs="$(sort_passed_uses "${PROFILE}")"
-	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w $(_cols)
+	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w "$(_cols)"
 	unset USEs
 }
 ############################################################################
@@ -210,7 +214,10 @@ makefile=""
 # make.conf may contain self-referencing expansions (FEATURES+=${FEATURES})
 # that are not set -u-safe; source it without strict mode.
 if [[ -n "${makefile}" ]]; then
-	set +u; . "${makefile}" 2>/dev/null; set -u
+	set +u
+	# shellcheck source=/dev/null  # /etc/portage/make.conf, resolved at runtime
+	. "${makefile}" 2>/dev/null
+	set -u
 fi
 MAKE_USES="${USE:-}"
 unset USE
@@ -296,7 +303,6 @@ backup(){
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
 	tarballs="$(ls -1 --color=never "${BRDIR}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
-	newest="$(tail -n1 <<< "${tarballs}")"
 	count="$( wc -l <<< "${tarballs}")"
 	count="${count:-0}"
 	# Derive the tar working dir from PORT_ETC instead of hardcoding /etc/,
@@ -341,7 +347,6 @@ world_backup(){
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
 	tarballs="$(ls -1 --color=never "${world_dir}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
-	newest="$(tail -n1 <<< "${tarballs}")"
 	count="$( wc -l <<< "${tarballs}")"
 	count="${count:-0}"
 	world_update="$(timestamp "${WORLD}")"
@@ -765,10 +770,10 @@ installed(){
 	all_vers=""
 	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}')"
 	if [[ -n "${installed}" ]];then
-		installed_vers="$(awk -F \: '{print $1}' <<< "${installed}")"
-		installed_min_ver="$(head -n1 <<< "${installed_vers}")"
-		installed_max_ver="$(tail -n1 <<< "$(grep -v 9999 <<< "${installed_vers}")" || true)"
-		installed_live_ver="$(tail -n1 <<< "$(grep 9999 <<< "${installed_vers}")" || true)"
+		# Note: installed_vers / installed_min_ver / installed_max_ver /
+		# installed_live_ver were computed here historically but never
+		# referenced downstream.  Removed during the 2.0.0 cosmetic pass
+		# (shellcheck SC2034).  Only installed_slots is used below.
 		installed_slots="$(awk -F \: '{print $2}' <<< "${installed}")"
 		#::repo check
 		full_vers="$(qlist -ICev "${category}/${pn}" | sed "s|${category}/${pn}-||g")"
@@ -1533,6 +1538,7 @@ mask_trash(){
 			oldest="$(awk '{print $1}' <<< "${versions}" || true)"
 		fi
 		unset _mver
+		# shellcheck disable=SC2034  # ucategory/upn/ufile are positional placeholders consumed by `read` even though the loop body only references usw/uver/urev/uslot
 		while read usw ucategory upn uver urev uslot ufile;do
 			versions_diff=""
 			versions_btwn=""
@@ -2094,7 +2100,7 @@ eix_dep_keys="--use-invalid
 # Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
-opts=" ${PORTCONF_DEFAULT_OPTS:-} ${@}"
+opts=" ${PORTCONF_DEFAULT_OPTS:-} ${*}"
 grep -q -e " --yes\>" -e " -y\>" <<< " ${opts}" && yes="1"
 grep -q -e " --pretend\>" -e " -p\>" <<< " ${opts}" && PRETEND="1"
 opts="$(sed -e 's| --yes\>||g;s| -y\>||g' -e 's| --pretend\>||g;s| -p\>||g' <<< " ${opts}")"
