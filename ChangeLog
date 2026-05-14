@@ -93,6 +93,25 @@
 	Build:
 	* configure.ac: bump to 2.0.0_rc1.
 
+	Docs:
+	* COPYING: full FSF GPL-3.0 text added (verbatim, byte-identical
+	  to Gentoo's /var/db/repos/gentoo/licenses/GPL-3).  Megabaks's
+	  upstream and every 1.5.x/1.6.x tag asserted the license only in
+	  the script header line; no COPYING/LICENSE was ever shipped.
+	  Adding it does NOT change terms — just makes the long-standing
+	  assertion machine-discoverable (GitHub License sidebar, Gentoo
+	  ebuild LICENSE matching, SPDX scanners) and ships the canonical
+	  text with the source tarball.  Makefile.am EXTRA_DIST updated.
+	* README.md: refreshed for 2.0.0 — maintained-fork note,
+	  280-test suite mention, env-overridable path roots section
+	  (for chroot / sandbox users), explicit COPYING reference.
+	  Dropped the "Install from ::stuff overlay ONLY" line since
+	  INSTALL now documents from-source installation alongside the
+	  overlay path.
+	* AUTHORS, README.md: scrubbed two references to "bash-revival",
+	  which was a local-workspace-directory label only, never a
+	  published project name or organisation.
+
 	Note on the rc1 vs pre6 naming: pre6 was a "feature work in
 	progress" snapshot; rc1 represents the candidate state for 2.0.0
 	final.  Outstanding LOW-severity items from the review (monolithic

@@ -3,10 +3,13 @@
 **Gentoo `/etc/portage` configuration cleaner and manager.**
 
 Originally written by [megabaks](https://github.com/megabaks/portconf) (2012–2014).
-Currently maintained by [istitov](https://github.com/istitov/portconf) as part
-of the [bash-revival](https://github.com/istitov/bash-revival) project.
+Currently maintained by [istitov](https://github.com/istitov/portconf).
 
-> Install from the `::stuff` overlay only — see [INSTALL](INSTALL).
+Version 2.0.0 marks the first release of the maintained fork: a thorough
+modernisation of the inherited script with autotools build system, a 280-test
+suite across three tiers (unit / integration / smoke), env-overridable system
+paths for sandboxing, and 15 latent bugs fixed.  See `ChangeLog` for the full
+breakdown.
 
 ---
 
@@ -52,11 +55,17 @@ portconf --pretend --full
 portconf --regen-cache --full
 ```
 
+Always start with `--pretend` to review the planned changes before letting
+portconf write anything.  Every mutating operation creates a backup tarball
+under `/var/lib/portconf/` first; use `portconf --restore` to roll back.
+
 ---
 
 ## Options
 
-See `portconf --help` or `man portconf` for the full option list.
+See `portconf --help` or `man portconf` for the full option list (35 flags
+across 8 categories).  Tab-completion is provided for bash and zsh — see
+`INSTALL` for the install paths.
 
 ---
 
@@ -78,9 +87,40 @@ Edit `/etc/portconf.conf`:
 PORTCONF_DEFAULT_OPTS="-rc"
 ```
 
+The config-file path itself honors the `PORTCONF_CONF` env var; see below.
+
+---
+
+## Environment overrides (for chroots, sandboxes, test harnesses)
+
+The six system path roots are env-overridable.  Defaults match the canonical
+modern Gentoo layout; override only if you know what you're doing — pointing
+them at the wrong location can sweep or modify real system state.
+
+```
+PORT_ETC       config dir            (default: /etc/portage)
+BRDIR          backup tarball dir    (default: /var/lib/portconf)
+PKGDB          installed-package db  (default: /var/db/pkg)
+WORLD          world file            (default: /var/lib/portage/world)
+DEP_PATH       eix dep-cache root    (default: /var/cache/edb/dep)
+PORTCONF_CONF  config-file path      (default: /etc/portconf.conf)
+```
+
+---
+
+## Installation
+
+Production (Gentoo): install from the `::stuff` overlay.
+
+From source: `autoreconf -i && ./configure && make && doas make install`.
+See [`INSTALL`](INSTALL) for full details, runtime dependencies, and the
+test-suite invocation.
+
 ---
 
 ## License
 
-GNU General Public License v3 or later.
+GNU General Public License v3 or later — see [`COPYING`](COPYING) for the
+full text.
+
 Original copyright megabaks; maintained fork copyright 2026 Ivan S. Titov.

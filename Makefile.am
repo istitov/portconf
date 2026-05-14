@@ -3,6 +3,8 @@ SUBDIRS = src man completion
 sysconf_DATA = portconf.conf
 
 EXTRA_DIST = \
+	COPYING \
+	README.md \
 	portconf.conf \
 	tests/test_helper.bash \
 	tests/unit/test_helper.bash \
