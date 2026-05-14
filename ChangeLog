@@ -113,8 +113,8 @@
 	  expected/actual + relevant /etc/portage file content (with
 	  flag-to-file pairing table); minimal feature template.
 	* ChangeLog: corrected stale commit-hash references and the
-	  broken rebrand from-to in the rc1 and pre6 entries; added the
-	  missing smoke-helper entries (help.bats, profile.bats) to pre6;
+	  broken rebrand from-to in the rc1 and pre5 entries; added the
+	  missing smoke-helper entries (help.bats, profile.bats) to pre5;
 	  updated test-count, bug-count, and `|| true` figures to match
 	  current state.
 
@@ -132,7 +132,7 @@
 
 	2.0.0_rc1 — "Audited Pretty Far Down"
 
-	Post-pre6 hardening round.  Critical code review of the pre6 tree
+	Post-pre5 hardening round.  Critical code review of the pre5 tree
 	surfaced 3 HIGH-severity correctness items and 4 MEDIUM-severity
 	hardening opportunities, all addressed.  Plus the 0.1.0 → 2.0.0
 	version-namespace rebrand acknowledging that the modernisation is a
@@ -164,7 +164,7 @@
 	  when empty.
 
 	Cascade fix:
-	* src/portconf.in (file_or_dir callers): with the pre6 file_or_dir
+	* src/portconf.in (file_or_dir callers): with the pre5 file_or_dir
 	  fix (ls set-e abort + dead-`[[ -z "${founded}" ]]` check) now
 	  firing the diagnostic properly for the first time, 11 callers
 	  that wrote `file_or_dir ... || return 1` started actually
@@ -202,11 +202,10 @@
 
 	Rebrand:
 	* configure.ac, man/portconf.1, ChangeLog: 0.1.0 → 2.0.0 across
-	  every tracked version reference.  The 0.1.0_pre1..pre4 + 0.1.0_pre6
-	  tags were renamed to 2.0.0_pre1..pre4 + 2.0.0_pre6 in the same
-	  commit — same commit objects, new tag names.  Pre-rebrand
-	  commit-message strings still say "0.1.0_pre*" as a historical
-	  record.
+	  every tracked version reference.  The 0.1.0_pre1..pre4 tags
+	  were renamed to 2.0.0_pre1..pre4 in the same commit — same
+	  commit objects, new tag names.  Pre-rebrand commit-message
+	  strings still say "0.1.0_pre*" as a historical record.
 
 	New tests:
 	* tests/integration/package_env.bats (6 tests, new file) — regression
@@ -243,7 +242,7 @@
 	  which was a local-workspace-directory label only, never a
 	  published project name or organisation.
 
-	Note on the rc1 vs pre6 naming: pre6 was a "feature work in
+	Note on the rc1 vs pre5 naming: pre5 was a "feature work in
 	progress" snapshot; rc1 represents the candidate state for 2.0.0
 	final.  Outstanding LOW-severity items from the review (monolithic
 	structure, leaf-function exit-1 usage, nested-function closures,
@@ -253,15 +252,36 @@
 
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
-	2.0.0_pre6 — "Tested All The Way Down"
+	2.0.0_pre5 — "Tested All The Way Down"
 
-	Coverage round and bug-hunt: every user-visible function and every
-	dispatcher case-arm now has unit, integration, or smoke coverage.
+	First substantial pre-release.  Comprehensive modernisation of the
+	inherited script across pre2 (style + safety), pre3-pre4
+	(correctness — 12 bugs in three audit rounds), and pre5 (initial
+	bats test suite).  Then the coverage round and bug-hunt that built
+	out two more test tiers and surfaced 11 further latent bugs that
+	had been silently mis-behaving on every modern Gentoo install of
+	portconf, unnoticed because no test exercised the affected path.
 	269 bats tests in three tiers (178 unit + 63 integration + 28
-	smoke).  Eleven pre-existing bugs surfaced and fixed in the process;
-	each had been silently mis-behaving on every modern Gentoo install
-	of portconf and went unnoticed because no test exercised the
-	affected path.
+	smoke) at the end.
+
+	Style and safety (pre2):
+	* src/portconf.in: Replace all backtick command substitutions with
+	  $().  Replace echo -e with printf '%b\n' throughout.  Full
+	  quoting audit — fix all unquoted variable expansions.
+	* src/portconf.in: set -euo pipefail enforced from line 4;
+	  || true guards added to grep/diff used in command substitutions.
+	  set -u + explicit initialisation of all accumulator variables.
+	  Trap-based temp-file cleanup (_tmpfiles array / _cleanup).
+	* src/portconf.in (overlays): Remove stray `unset PORTDIR_OVERLAY`
+	  after local declaration.  Replace all for-in-$(find/ls) loops
+	  with while IFS= read -r + process substitution.  Replace layman
+	  with repos.conf parsing.  Eliminate IFS-manipulation workaround
+	  loops.
+
+	Correctness (pre3–pre4):
+	* src/portconf.in: 12 bugs corrected — profile parent-traversal,
+	  use_mask path quoting, IFS= on every read call, and
+	  variable-quoting issues in sed/grep patterns.
 
 	Source-side overridability:
 	* src/portconf.in: Six system path roots now honor environment
@@ -278,7 +298,7 @@
 	* src/portconf.in (current_profile, use_mask, pre_profile init):
 	  honor ${PORT_ETC}/make.profile.
 
-	Bug fixes:
+	Bug fixes (latent — surfaced by the test coverage round):
 	* package_envs: rewritten for portage-utils 0.97+ qatom output
 	  (operator now a trailing field; "<unset>" placeholder for missing
 	  PV).  mask_trash had been broken on every Gentoo system since the
@@ -310,7 +330,34 @@
 	  diagnostic could fire; with that masked, `[[ -z "${founded}" ]]`
 	  never matched because ${founded} always has a leading space.
 
-	Tests (151→269 across rounds):
+	Tests (initial unit suite, pre5 batch):
+	* tests/test_helper.bash: Saves and restores bats' EXIT trap
+	  around the portconf.in source call (portconf sets `trap _cleanup
+	  EXIT` at load time, silently overwriting bats' own teardown trap
+	  under set -e).
+	* tests/unit/test_helper.bash: Stubs eend/ebegin to prevent the
+	  _update_tty_level 0<&1 FD-corruption crash inside bats subprocesses.
+	* tests/unit/ (16 files, 136 tests): Unit suite covering
+	  diff_ask, f_to_d/d_to_f, sort_uses/sort_use_file, empty_files/
+	  backup_files, sort_uniq_files, uniq_keywords, sort_keywords,
+	  sort_uniq_mask_use, ver_diff/ver_btwn, timestamp, backup,
+	  repo_fix/rm_repo_fix, use_makeconf.
+	* src/portconf.in (repo_fix): Add `|| true` inside the
+	  local_categories command substitution to prevent a pipefail abort
+	  when an overlay has no virtual/ directory.
+	* src/portconf.in (not_found): Add `|| true` to the
+	  `grep -v "${INVALID_FOUNDED}"` pipeline — grep exits 1 on empty
+	  emerge output under set -o pipefail, killing not_found whenever
+	  the INVALID path had already collected atoms.
+	* tests/integration/ (3 files, 15 tests): Integration suite for
+	  the three functions requiring live Portage tools.  eix and emerge
+	  are stubbed in not_found tests (eix -Ttc reads real /etc/portage,
+	  not PORT_ETC); real eix/qatom used for invalid_uses and
+	  invalid_uses_make; agrep stubbed in invalid_uses.  Run separately
+	  with `bats tests/integration/` or `make check-integration`.
+	  Requires app-portage/eix, app-portage/portage-utils, dev-libs/tre.
+
+	Tests (coverage-round additions, 151→269 across rounds):
 	* tests/unit/check_use_masked.bats (10 tests) — twice-masked /
 	  twice-unmasked / stupid-unmask / per-host-mask matrix.
 	* tests/unit/world_backup.bats (8 tests) — tarball creation,
@@ -352,61 +399,7 @@
 	  path roots.
 
 	Build:
-	* configure.ac: bump to 2.0.0_pre6.
-
-2026-05-13  Ivan S. Titov  <iohann.s.titov@gmail.com>
-
-	2.0.0_pre5 — "Under Test"
-
-	Comprehensive modernisation of the inherited script plus a full
-	bats unit test suite covering every function that can be exercised
-	without live Portage tools (eix / emerge / agrep).
-
-	Style and safety (pre2):
-	* src/portconf.in: Replace all backtick command substitutions with
-	  $().  Replace echo -e with printf '%b\n' throughout.  Full
-	  quoting audit — fix all unquoted variable expansions.
-	* src/portconf.in: set -euo pipefail enforced from line 4;
-	  || true guards added to grep/diff used in command substitutions.
-	  set -u + explicit initialisation of all accumulator variables.
-	  Trap-based temp-file cleanup (_tmpfiles array / _cleanup).
-	* src/portconf.in (overlays): Remove stray `unset PORTDIR_OVERLAY`
-	  after local declaration.  Replace all for-in-$(find/ls) loops
-	  with while IFS= read -r + process substitution.  Replace layman
-	  with repos.conf parsing.  Eliminate IFS-manipulation workaround
-	  loops.
-
-	Correctness (pre3–pre4):
-	* src/portconf.in: 12 bugs corrected — profile parent-traversal,
-	  use_mask path quoting, IFS= on every read call, and
-	  variable-quoting issues in sed/grep patterns.
-
-	Tests (pre5):
-	* tests/test_helper.bash: Saves and restores bats' EXIT trap
-	  around the portconf.in source call (portconf sets `trap _cleanup
-	  EXIT` at load time, silently overwriting bats' own teardown trap
-	  under set -e).
-	* tests/unit/test_helper.bash: Stubs eend/ebegin to prevent the
-	  _update_tty_level 0<&1 FD-corruption crash inside bats subprocesses.
-	* tests/unit/ (16 files, 136 tests): Unit suite covering
-	  diff_ask, f_to_d/d_to_f, sort_uses/sort_use_file, empty_files/
-	  backup_files, sort_uniq_files, uniq_keywords, sort_keywords,
-	  sort_uniq_mask_use, ver_diff/ver_btwn, timestamp, backup,
-	  repo_fix/rm_repo_fix, use_makeconf.
-	* src/portconf.in (repo_fix): Add `|| true` inside the
-	  local_categories command substitution to prevent a pipefail abort
-	  when an overlay has no virtual/ directory.
-	* src/portconf.in (not_found): Add `|| true` to the
-	  `grep -v "${INVALID_FOUNDED}"` pipeline — grep exits 1 on empty
-	  emerge output under set -o pipefail, killing not_found whenever
-	  the INVALID path had already collected atoms.
-	* tests/integration/ (3 files, 15 tests): Integration suite for
-	  the three functions requiring live Portage tools.  eix and emerge
-	  are stubbed in not_found tests (eix -Ttc reads real /etc/portage,
-	  not PORT_ETC); real eix/qatom used for invalid_uses and
-	  invalid_uses_make; agrep stubbed in invalid_uses.  Run separately
-	  with `bats tests/integration/` or `make check-integration`.
-	  Requires app-portage/eix, app-portage/portage-utils, dev-libs/tre.
+	* configure.ac: bump to 2.0.0_pre5.
 
 2026-05-12  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
