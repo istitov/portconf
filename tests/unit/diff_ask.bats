@@ -138,8 +138,11 @@ _write_files() {
 
 @test "diff_ask: interactive 'Yes' as non-root — exits 1 with go-away message" {
 	# The Yes case-arm runs `mv` only when UID==0; otherwise prints
-	# "you are !root --> go away!" and exits 1.  Non-root bats tests
-	# exercise the gating, not the apply itself.
+	# "you are !root --> go away!" and exits 1.  This test exercises
+	# the gating branch and so only applies when the running user is
+	# NOT root.  CI on gentoo/stage3:latest runs as root by default →
+	# the gating branch is unreachable → skip.
+	(( UID == 0 )) && skip "running as root; non-root branch unreachable"
 	printf '%s\n' "old" > "${_f1}"
 	printf '%s\n' "new" > "${_f2}"
 	yes=""; PRETEND=""
@@ -147,6 +150,20 @@ _write_files() {
 	run diff_ask "${_f1}" "${_f2}" <<< "Yes"
 	[ "$status" -eq 1 ]
 	[[ "${output}" == *'!root'* || "${output}" == *'go away'* ]]
+}
+
+@test "diff_ask: interactive 'Yes' as root — applies change, file replaced" {
+	# Complement to the previous test.  When UID==0 the Yes case-arm
+	# does mv + chmod 0644.  In CI on stage3:latest this is the actual
+	# path that fires.  Skip on non-root hosts so dev runs don't get
+	# a noisy skip.
+	(( UID != 0 )) && skip "not running as root; mv-branch unreachable from this UID"
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	yes=""; PRETEND=""
+	diff_ask "${_f1}" "${_f2}" <<< "Yes"
+	run cat "${_f1}"
+	assert_output 'new'
 }
 
 @test "diff_ask: interactive bogus response then 'No' — reprompts and discards" {
