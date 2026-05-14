@@ -3,6 +3,7 @@ SUBDIRS = src man completion packaging
 sysconf_DATA = portconf.conf
 
 EXTRA_DIST = \
+	.editorconfig \
 	COPYING \
 	README.md \
 	portconf.conf \
