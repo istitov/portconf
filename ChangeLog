@@ -1,3 +1,101 @@
+2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.0_pre6 — "Tested All The Way Down"
+
+	Coverage round and bug-hunt: every user-visible function and every
+	dispatcher case-arm now has unit, integration, or smoke coverage.
+	269 bats tests in three tiers (178 unit + 63 integration + 28
+	smoke).  Twelve pre-existing bugs surfaced and fixed in the process;
+	each had been silently mis-behaving on every modern Gentoo install
+	of portconf and went unnoticed because no test exercised the
+	affected path.
+
+	Source-side overridability (fb06983, d574348, 3fc5391):
+	* src/portconf.in: Six system path roots now honor environment
+	  overrides — PKGDB, BRDIR, PORT_ETC, WORLD, DEP_PATH, PORTCONF_CONF.
+	  Defaults unchanged (canonical modern Gentoo layout); production
+	  behaviour identical.
+	* src/portconf.in (backup): tar working-dir derived from
+	  ${PORT_ETC%/*}/ instead of hardcoded /etc/.  Legacy /etc/make.conf
+	  inclusion gated on PORT_ETC == /etc/portage.
+	* src/portconf.in (etc_restore): tar extract destination derived
+	  from ${PORT_ETC%/*}/ instead of literal "/etc/".
+	* src/portconf.in (overlays): reads ${PORT_ETC}/repos.conf (file +
+	  directory glob) instead of /etc/portage/repos.conf.
+	* src/portconf.in (current_profile, use_mask, pre_profile init):
+	  honor ${PORT_ETC}/make.profile.
+
+	Bug fixes (dcd0265, fb06983, d574348, d70562e, 3fc5391):
+	* package_envs: rewritten for portage-utils 0.97+ qatom output
+	  (operator now a trailing field; "<unset>" placeholder for missing
+	  PV).  mask_trash had been broken on every Gentoo system since the
+	  qatom format change.
+	* overlays: `stop` accessed under set -u before fix_deps() set it
+	  → unbound-variable crash on first dep-cache loop iteration.
+	* overlays/fix_deps: /var/cache/edb/dep hardcoded — would rm -rf
+	  real host cache when run with a stricter repos.conf.  Hoisted to
+	  overridable global DEP_PATH at init.
+	* overlays: `IFS= read -r path name` silently swallowed every
+	  overlay entry — empty IFS disables field splitting.  `portconf
+	  -fr` had never reported an unused overlay since this loop was
+	  introduced.
+	* restore(): `rm -rf "${5}"` with ${5}="${PORT_ETC}/*" never wiped
+	  anything — bash doesn't glob inside double quotes.  etc_restore's
+	  wipe-then-extract semantics had been a no-op.  Fix uses
+	  `find ${dir} -mindepth 1 -delete`.
+	* restore(): ${5} accessed under set -u when world_restore called
+	  with only 4 args → unbound-variable crash.
+	* regen_world: pretend-list concatenation lost the separator
+	  newline → downstream ^atom$ lookups missed.
+	* dispatcher (-ui, -uf, -t, -ft, -f): eix-cache cleanup compound
+	  returned 1 under set -e when eix_cache was empty, propagating
+	  to the script's exit.  Every mutating-flag run that reused the
+	  existing eix cache silently exited 1.
+	* package_env_conf: `find "${PORT_ETC}/env/"` aborted under set -e
+	  when env/ didn't exist (the common case).
+	* file_or_dir: `ls` failure aborted set -e before the "No such file"
+	  diagnostic could fire; with that masked, `[[ -z "${founded}" ]]`
+	  never matched because ${founded} always has a leading space.
+
+	Tests (165→269 across rounds):
+	* tests/unit/check_use_masked.bats (10 tests) — twice-masked /
+	  twice-unmasked / stupid-unmask / per-host-mask matrix.
+	* tests/unit/world_backup.bats (8 tests) — tarball creation,
+	  idempotency, rotation when count >= COUNT.
+	* tests/unit/portconf_conf.bats (14 tests) — COUNT defaulting,
+	  IGNORE_CATEGORY/IGNORE_PN regex expansion, PORTCONF_CONF override.
+	* tests/unit/error_paths.bats (5 tests, new) — eix not installed,
+	  file_or_dir missing target, backup auto-creates BRDIR.
+	* tests/unit/diff_ask.bats (+5) — interactive Yes/No/bogus reprompt
+	  branches; non-root Yes-exit-1 gating.
+	* tests/integration/mask_trash.bats (16 tests) — unversioned +
+	  versioned + slot-qualified atom branches.
+	* tests/integration/stupid_unmask.bats (9 tests) — stupid entry
+	  detection with installed/!installed labelling.
+	* tests/integration/overlays.bats (6 tests) — UNUSED detection with
+	  sandboxed PORT_ETC/PKGDB/DEP_PATH.
+	* tests/integration/backup_path.bats (5 tests) — PORT_ETC + BRDIR
+	  override contract.
+	* tests/integration/restore.bats (5 tests) — etc_restore +
+	  world_restore via bats <<< feeding bash's `select`.
+	* tests/integration/regen_world.bats (6 tests) — stubbed emerge +
+	  qlist; *-libs/, virtual/, and in-pretend exclusion filters.
+	* tests/smoke/mutating_flags.bats (15 tests, new) — every mutating
+	  dispatch arm through the BUILT binary with sandboxed paths and
+	  --pretend.  Covers -b, -c, -ac, -f2d, -wb, -s, -us, -ku, -ko,
+	  -sm, -ui, -um, -t, -uf, -f.
+
+	CI:
+	* .github/workflows/ci.yml: smoke suite step added after the
+	  integration tier.
+
+	Docs:
+	* INSTALL: "Environment overrides" section for the six overridable
+	  path roots.
+
+	Build:
+	* configure.ac: bump to 2.0.0_pre6.
+
 2026-05-13  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.0_pre5 — "Under Test"
