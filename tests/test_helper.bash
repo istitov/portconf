@@ -33,8 +33,9 @@ load "$(_portconf_find_bats_helper bats-assert)"
 load_portconf() {
 	set --
 	export PORTCONF_NO_MAIN=1
-	local was_errexit=
+	local was_errexit= was_nounset=
 	[[ $- == *e* ]] && was_errexit=1
+	[[ $- == *u* ]] && was_nounset=1
 	# Save bats' EXIT trap before sourcing portconf.in.
 	# portconf.in runs `trap _cleanup EXIT` at source time, which silently
 	# replaces bats' own teardown trap.  When set -e fires on a failing
@@ -42,11 +43,19 @@ load_portconf() {
 	# so the test result is never reported.
 	local saved_exit_trap
 	saved_exit_trap="$(trap -p EXIT)"
-	set +e
+	# Disable both set -e and set -u before sourcing.  Tests that call
+	# load_portconf a SECOND time within the same @test (e.g. to test a
+	# different PORTCONF_CONF input) would otherwise hit set -u while
+	# re-sourcing /lib/gentoo/functions.sh, which references KSH_VERSION
+	# without a default at line 45.  portconf.in itself sources functions.sh
+	# BEFORE enabling set -u, so the first call works without this guard
+	# — but the second call enters portconf.in with set -u already on.
+	set +eu
 	# shellcheck source=../src/portconf.in
 	source "${BATS_TEST_DIRNAME}/../../src/portconf.in"
 	eval "${saved_exit_trap:-trap - EXIT}"
 	[[ $was_errexit ]] && set -e
+	[[ $was_nounset ]] && set -u
 	unset PORTCONF_NO_MAIN
 	return 0
 }

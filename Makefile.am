@@ -25,6 +25,7 @@ EXTRA_DIST = \
 	tests/unit/check_use_masked.bats \
 	tests/unit/world_backup.bats \
 	tests/unit/portconf_conf.bats \
+	tests/unit/error_paths.bats \
 	tests/integration/test_helper.bash \
 	tests/integration/invalid_uses_make.bats \
 	tests/integration/not_found.bats \

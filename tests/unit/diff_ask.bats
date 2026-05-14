@@ -5,9 +5,13 @@
 # globals `yes` and `PRETEND`:
 #   yes=1, PRETEND=""   → auto-apply  (mv TMPFILE → FILE; chmod 0644)
 #   yes="", PRETEND=1   → discard     (rm TMPFILE; FILE unchanged)
-#   both empty          → interactive prompt (not tested here)
+#   both empty          → interactive prompt (read x; Yes/No/reprompt)
 #
 # When the files are identical diff_ask is a no-op (removes TMPFILE).
+#
+# NOTE on the interactive Apply branch: it's gated on `${UID}` == 0.  Non-
+# root callers hit the "you are !root --> go away!" arm and exit 1.  The
+# interactive tests below assert that behaviour rather than mocking UID.
 
 load 'test_helper'
 
@@ -102,4 +106,60 @@ _write_files() {
 	yes=""; PRETEND="1"
 	diff_ask "${_f1}" "${_f2}"
 	[[ ! -f "${_f2}" ]]
+}
+
+# --- interactive: yes="" PRETEND="" — reads from stdin -----------------
+
+@test "diff_ask: interactive 'No' — original unchanged" {
+	printf '%s\n' "old content" > "${_f1}"
+	printf '%s\n' "new content" > "${_f2}"
+	yes=""; PRETEND=""
+	diff_ask "${_f1}" "${_f2}" <<< "No"
+	run cat "${_f1}"
+	assert_output 'old content'
+}
+
+@test "diff_ask: interactive 'No' — tmp file removed" {
+	printf '%s\n' "old content" > "${_f1}"
+	printf '%s\n' "new content" > "${_f2}"
+	yes=""; PRETEND=""
+	diff_ask "${_f1}" "${_f2}" <<< "No"
+	[[ ! -f "${_f2}" ]]
+}
+
+@test "diff_ask: interactive 'n' (lowercase short) — original unchanged" {
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	yes=""; PRETEND=""
+	diff_ask "${_f1}" "${_f2}" <<< "n"
+	run cat "${_f1}"
+	assert_output 'old'
+}
+
+@test "diff_ask: interactive 'Yes' as non-root — exits 1 with go-away message" {
+	# The Yes case-arm runs `mv` only when UID==0; otherwise prints
+	# "you are !root --> go away!" and exits 1.  Non-root bats tests
+	# exercise the gating, not the apply itself.
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	yes=""; PRETEND=""
+	# diff_ask exits via `exit 1` inside the case; capture with run.
+	run diff_ask "${_f1}" "${_f2}" <<< "Yes"
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'!root'* || "${output}" == *'go away'* ]]
+}
+
+@test "diff_ask: interactive bogus response then 'No' — reprompts and discards" {
+	# Unknown responses fall through the * case-arm which reprompts.
+	# Two-line stdin: bogus is rejected, second "No" breaks out cleanly.
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	yes=""; PRETEND=""
+	run diff_ask "${_f1}" "${_f2}" <<< $'maybe\nNo\n'
+	[ "$status" -eq 0 ]
+	# Reprompt message must have been emitted for the bogus input.
+	[[ "${output}" == *"not understood"* ]]
+	# Original file unchanged.
+	run cat "${_f1}"
+	assert_output 'old'
 }

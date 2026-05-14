@@ -38,12 +38,42 @@ setup() {
 	load_portconf
 }
 
-# --- COUNT defaulting (resolved at portconf.in source time, line 53) ---
+# --- COUNT defaulting (resolved at portconf.in source time) ---
 
 @test "portconf.conf: COUNT defaults to 10 when not set" {
 	# load_portconf already ran; verify the default has been applied.
 	# /etc/portconf.conf is not present on the test host, so the
-	# conditional source at line 52 is a no-op and ${COUNT:-10} kicks in.
+	# conditional source is a no-op and ${COUNT:-10} kicks in.
+	[[ "${COUNT}" == "10" ]]
+}
+
+# --- PORTCONF_CONF env-var override of the source path ---
+
+@test "portconf.conf: PORTCONF_CONF override loads from custom path" {
+	# Make a scratch config that sets a non-default COUNT.
+	local conf
+	conf="$(mktemp)"
+	printf 'COUNT=42\n' > "${conf}"
+	export PORTCONF_CONF="${conf}"
+	load_portconf
+	[[ "${COUNT}" == "42" ]]
+	rm -f "${conf}"
+}
+
+@test "portconf.conf: PORTCONF_CONF override loads IGNORE_CATEGORY" {
+	local conf
+	conf="$(mktemp)"
+	printf 'IGNORE_CATEGORY="dev-lang"\n' > "${conf}"
+	export PORTCONF_CONF="${conf}"
+	load_portconf
+	# After init, IGNORE_CATEGORY has been transformed by _compute_ignore.
+	[[ "${IGNORE_CATEGORY}" == 'dev-lang/.*' ]]
+	rm -f "${conf}"
+}
+
+@test "portconf.conf: missing PORTCONF_CONF — defaults apply, no crash" {
+	export PORTCONF_CONF="/nonexistent/portconf.conf.does.not.exist"
+	load_portconf
 	[[ "${COUNT}" == "10" ]]
 }
 

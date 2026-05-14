@@ -53,7 +53,8 @@ IGNORE_PN=""
 COUNT=""
 PORTDIR_OVERLAY=""
 tmp_categories=""
-[[ -f "/etc/portconf.conf" ]] && . /etc/portconf.conf
+PORTCONF_CONF="${PORTCONF_CONF:-/etc/portconf.conf}"
+[[ -f "${PORTCONF_CONF}" ]] && . "${PORTCONF_CONF}"
 COUNT="${COUNT:-10}"
 ############################################################################
 ################ ignore ####################################################
@@ -463,9 +464,19 @@ sort_uniq_files(){
 file_or_dir(){
 	local founded=""
 	for i in ${1};do
-		founded+=" $(ls -d1 "${PORT_ETC}/"${i} 2>/dev/null)"
+		# `ls` returns exit 2 when the target doesn't exist; under set -e
+		# the command substitution's failure propagates to this assignment
+		# and the function exits 2 before reaching the empty-${founded}
+		# diagnostic branch.  `|| true` lets the loop complete so the
+		# downstream `[[ -z "${founded}" ]]` check reports "No such file"
+		# cleanly.
+		founded+=" $(ls -d1 "${PORT_ETC}/"${i} 2>/dev/null || true)"
 	done
-	if [[ -z "${founded}" ]];then
+	# `founded` always has a leading space from `founded+=" "...`; strip
+	# whitespace before testing for "no match" — otherwise the diagnostic
+	# branch never fires and the function falls through to the no-op for
+	# loop returning 0.
+	if [[ -z "${founded// /}" ]];then
 		printf '%b\n' "${underline}${2}${restore}${contrast}${PORT_ETC}/${1}${restore}: No such file or directory${restore}"
 		eend 1 2>/dev/null
 		return 1
@@ -1338,19 +1349,26 @@ package_envs(){
 		# portage-utils 0.97+ default qatom output emits the comparison
 		# operator as a TRAILING field and "<unset>" as a placeholder for
 		# missing PV / SLOT — not the leading-prefix-on-CATEGORY layout the
-		# legacy parser assumed.  Use the -F format to get a stable
-		# tab-separated structure, then normalise every empty position to
+		# legacy parser assumed.  Use the -F format to get a structured
+		# pipe-separated output, then normalise every empty position to
 		# the legacy "(null)" placeholder so the consumer-side read at
 		# whitespace boundaries gets seven aligned columns regardless of
 		# which atom shape the user wrote.
-		while IFS=$'\t' read -r cat pn pv pr slot pfx; do
+		#
+		# Separator MUST be a non-whitespace character: bash's `read` with
+		# IFS set to a whitespace char (space/tab/newline) collapses runs
+		# of consecutive delimiters into one, dropping intermediate empty
+		# fields.  For an atom like "<sys-apps/grep-99" where PR/SLOT are
+		# empty but pfx="<", whitespace-IFS read would put "<" into the
+		# PR slot.  "|" is invalid in atom syntax → safe.
+		while IFS='|' read -r cat pn pv pr slot pfx; do
 			[[ "${cat}" == "(null)" || "${pn}" == "(null)" ]] && continue
 			[[ "${pv}" == "<unset>" || -z "${pv}" ]] && pv="(null)"
 			[[ -z "${pr}" ]] && pr="(null)"
 			[[ -z "${slot}" ]] && slot="(null)"
 			[[ -z "${pfx}" ]] && pfx="(null)"
 			echo "${pfx} ${cat} ${pn} ${pv} ${pr} ${slot} ${file}"
-		done <<< "$(qatom -F $'%{CATEGORY}\t%{PN}\t%{PV}\t%[PR]\t%[SLOT]\t%[pfx]' "${atom}")"
+		done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]|%[pfx]' "${atom}")"
 	done
 }
 ############################################################################
