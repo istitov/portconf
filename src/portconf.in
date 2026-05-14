@@ -2108,8 +2108,8 @@ if grep -q -- "${eix_dep_keys}" <<< "${opts}";then
 else
 	opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
 fi
-# shellcheck SC2199: use $# instead of -z "${@}" (which implicitly array-
-# concatenates and works only by coincidence).
+# Use $# instead of -z "${@}" — the latter relied on implicit array-
+# concatenation inside [[ ]] (worked, but tripped SC2199).
 [[ $# -eq 0 || -z "${opts}" ]] && help_pc
 for OPT in ${opts};do
 	case "${OPT}" in
