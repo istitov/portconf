@@ -4,6 +4,7 @@ sysconf_DATA = portconf.conf
 
 EXTRA_DIST = \
 	.editorconfig \
+	.shellcheckrc \
 	COPYING \
 	README.md \
 	portconf.conf \
@@ -95,6 +96,34 @@ check-smoke:
 	done
 	$(BATS) $(srcdir)/tests/smoke/
 
+# 'make installcheck' runs after 'make install' to verify the installed
+# binary actually works.  Read-only — does not require root.  Honors
+# DESTDIR so staging installs (DESTDIR=/tmp/staging make install) check
+# the staged binary rather than the system one.
+installcheck-local:
+	@prog="$(DESTDIR)$(bindir)/portconf"; \
+	test -x "$$prog" || { \
+	  echo "error: $$prog is not installed or not executable" >&2; \
+	  exit 1; \
+	}; \
+	out=$$("$$prog" --version 2>&1) || { \
+	  echo "error: $$prog --version failed" >&2; \
+	  exit 1; \
+	}; \
+	case "$$out" in \
+	  *"$(PACKAGE_VERSION)"*) \
+	    echo "ok: $$prog --version reports $(PACKAGE_VERSION)" ;; \
+	  *) \
+	    echo "error: $$prog --version says: $$out" >&2; \
+	    echo "       expected to contain: $(PACKAGE_VERSION)" >&2; \
+	    exit 1 ;; \
+	esac; \
+	"$$prog" --help >/dev/null 2>&1 || { \
+	  echo "error: $$prog --help failed" >&2; \
+	  exit 1; \
+	}; \
+	echo "ok: $$prog --help"
+
 # 'make ebuild OVERLAY_DIR=...' delegates to packaging/Makefile.am, which
 # drops a versioned ebuild + metadata.xml into the given overlay path
 # and runs `ebuild ... manifest` to fetch the dist tarball and write
@@ -102,4 +131,4 @@ check-smoke:
 ebuild:
 	$(MAKE) -C packaging ebuild OVERLAY_DIR=$(OVERLAY_DIR)
 
-.PHONY: check-integration check-smoke ebuild
+.PHONY: check-integration check-smoke installcheck-local ebuild
