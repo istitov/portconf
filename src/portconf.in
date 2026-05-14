@@ -318,7 +318,14 @@ restore(){
 	printf '%b\n' "${contrast}Available backups${restore}:"
 	select answer in ${tarballs};do
 		printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
-		[[ -n "${5}" ]] && rm -rf "${5}"
+		# $5 (optional) is the dir whose CONTENTS should be wiped before
+		# extracting the chosen tarball (so the restore is authoritative —
+		# leftover files from the current state don't survive).  Use
+		# find -delete rather than `rm -rf ${5}/*` so an empty dir doesn't
+		# pass an empty arglist to rm and weirdly-named entries (leading
+		# dashes, spaces) are handled safely.  ${5:-} default form is
+		# required under set -u when callers (world_restore) pass only 4 args.
+		[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
 		tar -xf "${1}/${2}_${answer}.tar.bz2" -C "${4}" 2>/dev/null
 		eend $? 2>/dev/null
 		break
@@ -329,7 +336,8 @@ restore(){
 etc_restore(){
 	# Tar extract destination is the parent dir of PORT_ETC (the tarball
 	# contains a "portage" subdir as its top-level entry — see backup()).
-	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC%/*}/" "${PORT_ETC}/*"
+	# 5th arg = PORT_ETC itself: restore() wipes its contents before extract.
+	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC%/*}/" "${PORT_ETC}"
 }
 ############################################################################
 ################ world_restore #############################################
@@ -1583,7 +1591,11 @@ regen_world(){
 	rm "${emerge_log}"
 
 	pretend="$(grep -v "blocks" <<< "${pre_pre}" | awk '/^\[/ {print $4}' || true)" && eend 0 2>/dev/null
-	pretend+="$(qlist -CI $(emerge -epO system | awk '/\[/ {print $4}'))"$'\n'
+	# Command substitution strips trailing newlines, so `pretend` does NOT
+	# end in $'\n' after the previous line.  Insert one before the next
+	# block, otherwise the last eopd atom is concatenated with the first
+	# qlist atom on a single line and downstream `^atom$` lookups miss.
+	pretend+=$'\n'"$(qlist -CI $(emerge -epO system | awk '/\[/ {print $4}'))"$'\n'
 
 	for atom in ${installed};do
 		if ! grep -q "^${atom}$" <<< "${pretend}" && ! grep -q ".*-libs/" <<< "${atom}" && ! grep -q "virtual/" <<< "${atom}";then
