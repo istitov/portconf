@@ -1,5 +1,7 @@
 # portconf
 
+[![CI](https://github.com/istitov/portconf/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/istitov/portconf/actions/workflows/ci.yml)
+
 **Gentoo `/etc/portage` configuration cleaner and manager.**
 
 Originally written by [megabaks](https://github.com/megabaks/portconf) (2012–2014).
@@ -8,8 +10,8 @@ Currently maintained by [istitov](https://github.com/istitov/portconf).
 Version 2.0.0 marks the first release of the maintained fork: a thorough
 modernisation of the inherited script with autotools build system, a 280-test
 suite across three tiers (unit / integration / smoke), env-overridable system
-paths for sandboxing, and 15 latent bugs fixed.  See `ChangeLog` for the full
-breakdown.
+paths for sandboxing, and 15 latent bugs fixed.  See [`ChangeLog`](ChangeLog)
+for the full breakdown.
 
 ---
 
@@ -65,7 +67,7 @@ under `/var/lib/portconf/` first; use `portconf --restore` to roll back.
 
 See `portconf --help` or `man portconf` for the full option list (35 flags
 across 8 categories).  Tab-completion is provided for bash and zsh — see
-`INSTALL` for the install paths.
+[`INSTALL`](INSTALL) for the install paths.
 
 ---
 
@@ -110,7 +112,7 @@ PORTCONF_CONF  config-file path      (default: /etc/portconf.conf)
 
 ## Installation
 
-Production (Gentoo): install from the `::stuff` overlay.
+Production (Gentoo): install from the [`::stuff`](https://github.com/istitov/stuff) overlay.
 
 From source: `autoreconf -i && ./configure && make && doas make install`.
 See [`INSTALL`](INSTALL) for full details, runtime dependencies, and the

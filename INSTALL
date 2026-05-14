@@ -3,8 +3,13 @@ Installing portconf
 
 Gentoo (recommended)
 --------------------
-Install from the ::stuff overlay:
+Install from the ::stuff overlay <https://github.com/istitov/stuff>:
 
+    # Add the overlay (one-time, choose either):
+    #   eselect repository add stuff git https://github.com/istitov/stuff
+    # or write /etc/portage/repos.conf/stuff.conf with sync-uri set to
+    # https://github.com/istitov/stuff
+    emaint sync -r stuff
     emerge app-portage/portconf
 
 This is the only supported installation method for production Gentoo systems.
