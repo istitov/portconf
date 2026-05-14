@@ -1,5 +1,108 @@
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
+	2.0.0_rc1 — "Audited Pretty Far Down"
+
+	Post-pre6 hardening round.  Critical code review of the pre6 tree
+	surfaced 3 HIGH-severity correctness items and 4 MEDIUM-severity
+	hardening opportunities, all addressed.  Plus the 2.0.0 → 2.0.0
+	version-namespace rebrand acknowledging that the modernisation is a
+	major-version successor to megabaks's 1.6.x line, not a fresh 0.x
+	project.
+
+	Branch state: 280 bats tests in three tiers (178 unit + 70 integration
+	+ 32 smoke).  Fifteen cumulative latent-bug fixes across all rounds.
+
+	HIGH-severity fixes (commit 42af303):
+	* src/portconf.in (package_env): sed `s|${line}|${new_line}|` was
+	  interpolating raw user content from package.env.  Atoms with
+	  USE-dep brackets like `sys-apps/grep[static]`, pipes in comments,
+	  or dots in conf names corrupted the in-place edit.  Fixed via the
+	  same escape pattern used in invalid_uses_make's _p/_r block,
+	  extended to also escape `[` and `*`.
+	* src/portconf.in (mask_trash): hoisted the `eix -e "${cat}/${pn}"`
+	  call out of the inner unmask loop — it depends only on outer-loop
+	  variables.  Previous nested shape was O(N×M) eix forks (up to
+	  2500 for a typical 50+50 mask/unmask config); now O(N) with a
+	  lazy-fetch fallback for the rare case where mver is empty but
+	  the first inner iteration has a non-empty uver.
+	* src/portconf.in (regen_world): `qlist -CI $(emerge -epO system |
+	  awk '/\[/ {print $4}')` with empty awk output ran `qlist -CI`
+	  with zero atom args and returned the FULL installed list — every
+	  installed atom then landed in `pretend`, every atom matched the
+	  filter, and the @world cleanup was a no-op.  Fixed by capturing
+	  the system-atoms list and skipping the qlist append entirely
+	  when empty.
+
+	Cascade fix (commit 42af303):
+	* src/portconf.in (file_or_dir callers): commit 3fc5391 fixed two
+	  bugs in file_or_dir (ls set-e abort + dead-`[[ -z "${founded}" ]]`
+	  check).  With the diagnostic firing properly for the first time,
+	  11 callers that wrote `file_or_dir ... || return 1` started
+	  actually propagating the "missing target" signal — which then
+	  aborted dispatch arms like -t mid-chain.  All these callers are
+	  processing OPTIONAL config files; changed to `|| true` at all
+	  11 sites (sort_uses, sort_keywords, sort_uniq_files, sort_uniq_-
+	  mask_use, sort_uses, package_env_conf, package_env, all_mask_-
+	  trash×2, stupid_unmask, check_use_masked).  No behavioural change
+	  vs. the historical (broken) silent-no-op state; the diagnostic
+	  message is now visible without breaking composite dispatch.
+
+	MEDIUM-severity hardening (commit 624d827):
+	* src/portconf.in (color codes): emitted only when `[ -t 1 ]` AND
+	  `${NO_COLOR:-}` is unset (https://no-color.org).  Pipe/redirect
+	  contexts now get clean machine-readable output.
+	* src/portconf.in (tput): all 17 raw `tput` call sites now go
+	  through `_tput`/`_cols` wrappers that no-op when stdout isn't a
+	  TTY.  `_cols` falls back to 80 columns.  Fixes hang/error
+	  behaviour in pipes and unset-$TERM contexts.
+	* src/portconf.in (sed-injection at 3 milder sites): new helpers
+	  `_sed_escape_pat` and `_sed_escape_rep` applied at sort_uses,
+	  sort_keywords, and not_found.  Atoms with USE-dep brackets,
+	  dots in versions, or wildcards no longer slip past the regex
+	  match.
+	* src/portconf.in (set -f containment): `local -` (bash 4.4+)
+	  added at function entry of invalid_uses, invalid_uses_make,
+	  invalid_lines, and f_to_d to guarantee globbing-state
+	  restoration on any return path — including set -e aborts mid-
+	  function.  Redundant trailing `set +f` calls removed where the
+	  scope was function-level.
+	* src/portconf.in: walked all 107 `|| true` patches; no findings.
+	  Every one defensive against expected empty-result tool output
+	  (grep on no-match, awk on empty input, find on missing dir).
+
+	Rebrand (commit e8981bd):
+	* configure.ac, man/portconf.1, ChangeLog: 2.0.0 → 2.0.0 across
+	  every tracked version reference.  The 2.0.0_pre1..pre4 + pre6
+	  tags were renamed to 2.0.0_pre1..pre4 + pre6 in the same commit
+	  — same commit objects, new tag names.  Pre-e8981bd commit-message
+	  strings still say "2.0.0_pre*" as a historical record.
+
+	New tests:
+	* tests/integration/package_env.bats (6 tests, new file) — regression
+	  for HIGH#1 sed-injection.  Covers atoms with [USE] brackets,
+	  pipes in comments, dots in conf names, plus happy-path
+	  present/missing-conf cases.
+	* tests/integration/regen_world.bats (+1 test) — explicit regression
+	  for HIGH#3.  Sets EMERGE_SYSTEM="" and verifies @world still
+	  gets cleaned (vs. pre-fix where it stayed empty).  Existing 6
+	  tests dropped their `EMERGE_SYSTEM='sentinel/atom'` workaround.
+	* tests/smoke/no_color.bats (4 tests, new file) — regression for
+	  MEDIUM#4.  Asserts --version, --help, -apu produce no ANSI
+	  escapes when stdout is non-TTY; plus explicit NO_COLOR=1 check.
+
+	Build:
+	* configure.ac: bump to 2.0.0_rc1.
+
+	Note on the rc1 vs pre6 naming: pre6 was a "feature work in
+	progress" snapshot; rc1 represents the candidate state for 2.0.0
+	final.  Outstanding LOW-severity items from the review (monolithic
+	structure, leaf-function exit-1 usage, nested-function closures,
+	help/dispatcher drift detection) are explicitly deferred to a
+	2.1.0 cycle — they are architecture/maintainability concerns, not
+	correctness blockers.
+
+2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
 	2.0.0_pre6 — "Tested All The Way Down"
 
 	Coverage round and bug-hunt: every user-visible function and every
