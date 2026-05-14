@@ -1,0 +1,185 @@
+#!/usr/bin/env bats
+# Smoke: mutating dispatch arms exercised end-to-end with --pretend.
+#
+# Every test here forks the BUILT src/portconf binary with these env-var
+# overrides pointing at throwaway tmpdirs:
+#
+#   PORT_ETC   sandboxed config tree (with representative fixture files)
+#   BRDIR      sandboxed backup output dir (backup() writes here)
+#   PKGDB      empty sandbox (so the few PKGDB-readers find no packages)
+#   DEP_PATH   sandboxed dep-cache (so overlays()'s fix_deps doesn't
+#              touch the host's /var/cache/edb/dep)
+#
+# Combined with -p (--pretend), every actual file mutation downstream of
+# backup() is gated — assertions can verify PORT_ETC is unchanged after
+# the run.  backup() itself ALWAYS writes (it doesn't honor PRETEND by
+# design), so each test confirms the tarball lands in the sandboxed BRDIR.
+#
+# Coverage focus: the dispatch arm wiring.  Unit and integration tests
+# already validate each individual function; smoke validates that the
+# binary actually walks every case-statement branch from start to finish
+# without crashing, and that the composite arms (-uf chains 6 functions,
+# -t chains 6, -f chains 13+) work as the dispatcher intended.
+#
+# eix-cache strategy: for arms that need real eix (-ui/-um/-uf/-t/-ft/-f
+# pass the `eix_dep_keys` grep), eix_method's "Create temporary cache?"
+# prompt fires when OVERLAY_CACHE_METHOD != "parse|ebuild*" (the modern
+# Gentoo default).  smoke_run pipes "No" to dismiss it; eix then uses
+# the host's existing populated cache to validate test atoms.
+
+load test_helper
+
+setup() {
+	if ! command -v eselect >/dev/null; then
+		skip "eselect not on PATH"
+	fi
+	if ! command -v eix >/dev/null; then
+		skip "eix not on PATH"
+	fi
+	smoke_sandbox
+}
+
+teardown() {
+	smoke_cleanup
+}
+
+# Helper assertions.
+
+_assert_brdir_has_backup() {
+	# backup() writes portage_<timestamp>.tar.bz2 unconditionally on every
+	# mutating-arm invocation (PRETEND doesn't gate backup itself).
+	[[ -n "$(ls "${SMOKE_BRDIR}/")" ]]
+}
+
+_assert_port_etc_unchanged() {
+	# With -p, no function downstream of backup() should mutate PORT_ETC.
+	# The fixture's package.use must still contain its original content.
+	local content
+	content="$(cat "${SMOKE_PORT_ETC}/package.use")"
+	[[ "${content}" == 'sys-apps/grep static' ]]
+}
+
+# --- single-step arms (no eix-dep-keys, no composite) -------------------
+
+@test "smoke: -y -p -b — standalone backup" {
+	smoke_run -y -p -b
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+	_assert_port_etc_unchanged
+}
+
+@test "smoke: -y -p -c — backup + rm_comments" {
+	# Add a comment line that rm_comments would target.
+	printf '# leading comment\nsys-apps/grep static\n' \
+		> "${SMOKE_PORT_ETC}/package.use"
+	smoke_run -y -p -c
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -ac — backup + rm_all_comments" {
+	smoke_run -y -p -ac
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -f2d — backup + f_to_d (file → dir layout)" {
+	smoke_run -y -p -f2d
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+# --- composite arms WITHOUT eix-dep-keys --------------------------------
+
+@test "smoke: -y -p -s — sort composite (backup + 4 fns)" {
+	smoke_run -y -p -s
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -us — backup + sort_use_file" {
+	smoke_run -y -p -us
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -ku — backup + uniq_keywords" {
+	smoke_run -y -p -ku
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -ko — backup + sort_keywords" {
+	smoke_run -y -p -ko
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -y -p -sm — backup + mask_trash (real qatom)" {
+	smoke_run -y -p -sm
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+# --- composite arms WITH eix-dep-keys (slow path) -----------------------
+
+@test "smoke: -p -ui — invalid_uses composite" {
+	# Without -y, eix_method DOESN'T auto-run eix-update; smoke_run pipes
+	# "No" to dismiss the prompt and uses the host's existing cache.
+	smoke_run -p -ui
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+	_assert_port_etc_unchanged
+}
+
+@test "smoke: -p -um — use_makeconf composite" {
+	smoke_run -p -um
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -p -t — trash composite (6 fns including not_found chain)" {
+	smoke_run -p -t
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -p -uf — use-full composite (backup + 6 fns + eix cleanup)" {
+	# Exercises the eix_cache cleanup branch at the end of the -uf dispatch
+	# arm (line ~1923) — unreachable by unit/integration tests because
+	# eix_check is what populates ${eix_cache}, and it runs only here.
+	smoke_run -p -uf
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+	_assert_port_etc_unchanged
+}
+
+@test "smoke: -p -f — full composite (the big one — 13+ fns)" {
+	# The most comprehensive dispatch arm.  A wiring regression anywhere
+	# in this chain surfaces here even if every individual function still
+	# passes its unit tests.
+	smoke_run -p -f
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+# --- profile-listing already covered by profile.bats; world-state arm ---
+
+@test "smoke: -y -p -wb — world_backup standalone" {
+	# WORLD defaults to /var/lib/portage/world (real host path).  For
+	# isolated smoke testing point it at the sandbox.  Tarball lands in
+	# ${BRDIR}/world/ — verify it's there.
+	mkdir -p "${SMOKE_PORT_ETC}/world_dir"
+	local world_file="${SMOKE_PORT_ETC}/world_dir/world"
+	printf 'sys-apps/portage\n' > "${world_file}"
+	run env \
+		PORT_ETC="${SMOKE_PORT_ETC}" \
+		BRDIR="${SMOKE_BRDIR}" \
+		PKGDB="${SMOKE_PKGDB}" \
+		DEP_PATH="${SMOKE_DEP}" \
+		WORLD="${world_file}" \
+		"${PORTCONF_BIN}" -y -p -wb <<< $'No\n'
+	[ "$status" -eq 0 ]
+	[[ -d "${SMOKE_BRDIR}/world" ]]
+	[[ -n "$(ls "${SMOKE_BRDIR}/world/")" ]]
+}

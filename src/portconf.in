@@ -781,7 +781,11 @@ force_not_installed(){
 ############################################################################
 ################ package.env conf ##########################################
 package_env_conf(){
-	all_confs="$(find "${PORT_ETC}/env/" -maxdepth 1 -type f)"
+	# `find` exits 1 if ${PORT_ETC}/env doesn't exist (common: most users
+	# never use per-package env), and command substitution propagates that
+	# failure to the assignment under set -e — script exits 1 mid-dispatch.
+	# Silence and force success; empty output means "no env confs".
+	all_confs="$(find "${PORT_ETC}/env/" -maxdepth 1 -type f 2>/dev/null || true)"
 	all_confs="${all_confs//${PORT_ETC////\/}\/env\//}"
 	check_env_conf(){
 		USED_ENV=""
@@ -1960,7 +1964,12 @@ for OPT in ${opts};do
 		backup;
 		invalid_uses;
 		invalid_uses_make;
-		[[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE;;
+		# When eix_method was used (existing host cache, no temp file created),
+		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
+		# so the compound never returns false — otherwise this becomes the
+		# last command of the case arm, propagates up through the dispatch
+		# loop, and the binary exits 1 despite every preceding step succeeding.
+		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--use-make | -um )
 		backup;
 		use_makeconf;;
@@ -1976,7 +1985,12 @@ for OPT in ${opts};do
 		invalid_uses_make;
 		use_makeconf;
 		check_use_masked;
-		[[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE;;
+		# When eix_method was used (existing host cache, no temp file created),
+		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
+		# so the compound never returns false — otherwise this becomes the
+		# last command of the case arm, propagates up through the dispatch
+		# loop, and the binary exits 1 despite every preceding step succeeding.
+		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--keyword-one | -ko )
 		backup;
 		sort_keywords;;
@@ -1991,7 +2005,12 @@ for OPT in ${opts};do
 		env_not_installed;
 		empty_files;
 		backup_files;
-		[[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE;;
+		# When eix_method was used (existing host cache, no temp file created),
+		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
+		# so the compound never returns false — otherwise this becomes the
+		# last command of the case arm, propagates up through the dispatch
+		# loop, and the binary exits 1 despite every preceding step succeeding.
+		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--stupid-mask | -sm )
 		backup;
 		mask_trash;;
@@ -2007,7 +2026,12 @@ for OPT in ${opts};do
 		force_not_installed;
 		empty_files;
 		backup_files;
-		[[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE;;
+		# When eix_method was used (existing host cache, no temp file created),
+		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
+		# so the compound never returns false — otherwise this becomes the
+		# last command of the case arm, propagates up through the dispatch
+		# loop, and the binary exits 1 despite every preceding step succeeding.
+		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--rm-comments | -c )
 		backup;
 		rm_comments;;
@@ -2032,7 +2056,12 @@ for OPT in ${opts};do
 		stupid_unmask;
 		empty_files;
 		backup_files;
-		[[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE;;
+		# When eix_method was used (existing host cache, no temp file created),
+		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
+		# so the compound never returns false — otherwise this becomes the
+		# last command of the case arm, propagates up through the dispatch
+		# loop, and the binary exits 1 despite every preceding step succeeding.
+		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--files-2-dirs | -f2d )
 		backup;
 		f_to_d;;

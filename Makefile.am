@@ -37,7 +37,8 @@ EXTRA_DIST = \
 	tests/integration/regen_world.bats \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
-	tests/smoke/profile.bats
+	tests/smoke/profile.bats \
+	tests/smoke/mutating_flags.bats
 
 # Override BATS to point at a non-system bats binary if needed.
 BATS = bats
