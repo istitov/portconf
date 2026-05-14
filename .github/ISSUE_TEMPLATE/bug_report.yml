@@ -1,0 +1,98 @@
+name: Bug report
+description: Report something portconf does wrong
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.  Please include the
+        exact version + environment so we can reproduce.
+
+  - type: textarea
+    id: version-env
+    attributes:
+      label: portconf version + environment
+      description: |
+        Paste the output of `portconf --version` plus the Gentoo
+        environment basics (bash, profile, eix, portage-utils).
+        portconf is sensitive to changes in those tools' output formats
+        — see the 2.0.0 ChangeLog entry for examples where qatom and eix
+        version drift broke things.
+      placeholder: |
+        $ portconf --version
+        portconf 2.0.0
+        $ bash --version | head -1
+        GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+        $ eselect profile show
+        Current /etc/portage/make.profile symlink: default/linux/amd64/23.0/desktop
+        $ eix --version
+        eix-0.36.10
+        $ qatom --version | head -1
+        portage-utils-0.97.1
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: command-output
+    attributes:
+      label: Command and full output
+      description: |
+        The exact command line that triggered the bug, and the full
+        terminal output.  Run with `-p` (pretend) first if a "real"
+        run would lose state you need to inspect.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: configs
+    attributes:
+      label: Relevant /etc/portage file content
+      description: |
+        If the bug involves a specific config file, paste its content
+        (or an excerpt that preserves the structure).  Strip anything
+        sensitive but keep the layout — formatting bugs and parser
+        bugs reproduce on the exact bytes.
+
+        Typical pairings:
+
+          | flag                  | file(s) to attach                       |
+          |-----------------------|-----------------------------------------|
+          | -ui, -uf              | package.use                             |
+          | -um                   | make.conf + profile USE                 |
+          | -ku, -ko              | package.keywords / .accept_keywords     |
+          | -sm, -sum             | package.mask, package.unmask            |
+          | -t, -ft               | any package.* + env/                    |
+          | -fr                   | repos.conf/*; also paste `qlist -IR`    |
+          | -wg, -wb, -wr         | /var/lib/portage/world                  |
+          | (configuration bug)   | /etc/portconf.conf                      |
+    validations:
+      required: false
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Anything else?
+      description: |
+        Unusual overlay layout, env-var overrides (PORT_ETC, BRDIR,
+        PKGDB, WORLD, DEP_PATH, PORTCONF_CONF), non-stock profile
+        tree — anything that isn't a vanilla Gentoo install and
+        might be relevant.
+    validations:
+      required: false

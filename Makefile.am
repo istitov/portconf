@@ -5,6 +5,7 @@ sysconf_DATA = portconf.conf
 EXTRA_DIST = \
 	.editorconfig \
 	.shellcheckrc \
+	CONTRIBUTING.md \
 	COPYING \
 	README.md \
 	portconf.conf \

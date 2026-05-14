@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: portconf README
+    url: https://github.com/istitov/portconf/blob/master/README.md
+    about: Most usage questions are answered by README.md or `man portconf`.
+  - name: portconf ChangeLog
+    url: https://github.com/istitov/portconf/blob/master/ChangeLog
+    about: Check the recent entries — your issue may already have been fixed.
