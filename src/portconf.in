@@ -601,10 +601,11 @@ sort_uses(){
 	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-		for option in \
-		"$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
-			atom_opts+="${option}"
-		done
+		# The substitution produces a single space-separated string of USE
+		# flag tokens for this atom; sort_passed_uses below tokenises on
+		# whitespace.  Direct append (was a one-iteration `for` loop before
+		# — shellcheck SC2066 — same semantics, less code).
+		atom_opts+="$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)"
 		uses="$(sort_passed_uses "${atom_opts}")"
 		uses="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${uses}")"
 		if [[ -n "${comment}" ]];then
@@ -692,10 +693,9 @@ sort_keys(){
 	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
 	for atom in ${PACKAGES};do
 		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-		for option in \
-		"$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)";do
-			atom_opts+="${option}"
-		done
+		# Single-shot append (was a one-iteration `for` loop — see sort_uses
+		# above for the same SC2066 fix).
+		atom_opts+="$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)"
 		keys="$(sort_passed_uses "${atom_opts}")"
 		keys="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${keys}")"
 		keys="${keys:-"~${ARCH}"}"
@@ -1485,6 +1485,10 @@ all_mask_trash(){
 }
 mask_trash(){
 	TRASH=""
+	# Helper functions used to fire `continue 2` to skip the rest of the
+	# inner unmask loop AND continue the outer mask loop's next iteration.
+	# That works in bash but is non-portable and trips shellcheck SC2104.
+	# Now: set `_trash_hit=1` and let the inner loop's body break out.
 	slot_output(){
 		if [[ "${mslot}" != "(null)" ]];then
 			printf '%b\n' "${red}Incorrect${restore}: ${mcategory}/${mpn}:${mslot}"
@@ -1492,12 +1496,12 @@ mask_trash(){
 			printf '%b\n' "${red}Incorrect${restore}: ${mcategory}/${mpn}"
 		fi
 		TRASH+="${mfile} ${mcategory}/${mpn}"$'\n'
-		continue 2
+		_trash_hit=1
 	}
 	non_slot_output(){
 		printf '%b\n' "${red}Incorrect${restore}: ${msw}${mcategory}/${mpn}-${mver}"
 		TRASH+="${mfile} ${msw}${mcategory}/${mpn}-${mver}"$'\n'
-		continue 2
+		_trash_hit=1
 	}
 	# all_mask_trash propagates file_or_dir's "missing target" return
 	# through `|| true` since the patch making file_or_dir callers
@@ -1509,6 +1513,10 @@ mask_trash(){
 	export VERSIONONLY='<version> '
 	export FORMAT='<availableversions:VERSIONONLY>'
 	while read msw mcategory mpn mver mrev mslot mfile;do
+		# Reset per outer-iteration: `_trash_hit` is set by slot_output /
+		# non_slot_output when a redundancy is detected, and read by the
+		# inner loop's `break` guard at the bottom.
+		_trash_hit=0
 		# Hoist the eix call OUT of the inner unmask loop: ${versions} and
 		# ${oldest} depend only on (mcategory, mpn), not on any inner-loop
 		# variable.  Previous nested-call shape was O(N×M) eix forks (up to
@@ -1578,6 +1586,9 @@ mask_trash(){
 					fi
 				fi
 			fi
+			# Break inner if a trash entry was just recorded — same effect
+			# as the old `continue 2` from inside slot_output/non_slot_output.
+			(( _trash_hit )) && break
 		done <<< "$(grep " ${mcategory} ${mpn} " <<< "${UNMASKED}" || true)"
 	done <<< "${MASKED}"
 
@@ -2097,7 +2108,9 @@ if grep -q -- "${eix_dep_keys}" <<< "${opts}";then
 else
 	opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
 fi
-[[ -z "${@}" || -z "${opts}" ]] && help_pc
+# shellcheck SC2199: use $# instead of -z "${@}" (which implicitly array-
+# concatenates and works only by coincidence).
+[[ $# -eq 0 || -z "${opts}" ]] && help_pc
 for OPT in ${opts};do
 	case "${OPT}" in
 	--backup | -b ) backup;;
