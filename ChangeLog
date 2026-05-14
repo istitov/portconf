@@ -1,5 +1,33 @@
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
+	2.0.0 — "Released"
+
+	First final release of the maintained fork.  rc1 + rc2 baked in
+	through three CI cycles on gentoo/stage3:latest; 281 bats tests
+	passing (178 unit + 70 integration + 32 smoke + 1 root-conditional)
+	plus a clean shellcheck pass.
+
+	Since rc2:
+	* src/portconf.in: shellcheck cosmetic pass — 18 warning-level
+	  findings down to 3.  Dead variables removed (newest in backup/
+	  world_backup; installed_vers / installed_min_ver / installed_-
+	  max_ver / installed_live_ver in check_uses).  ${*} for the opts
+	  assembly (was implicit ${@}-as-string).  Quoted `$(_cols)` in
+	  the three fold-pipeline sites.  `# shellcheck disable=` and
+	  `# shellcheck source=/dev/null` directives at the four runtime-
+	  resolved source-call sites and the variadic _mktemp forwarder
+	  and the intentional column-placeholder `read` in mask_trash.
+	  No behaviour change — diff is comments + idiomatic spellings
+	  + 7 lines of dead code removed.
+	* The remaining 3 warnings are SC2010 (`ls | grep`) patterns in
+	  repo_fix / f_to_d / d_to_f.  Functional rewrites; explicitly
+	  deferred to 2.1.0.
+
+	Build:
+	* configure.ac: bump to 2.0.0.
+
+2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
 	2.0.0_rc2 — "First CI Run Cleanup"
 
 	Fixes 5 shellcheck --severity=error violations that the rc1 CI run
