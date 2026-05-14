@@ -100,15 +100,14 @@ emerge() {
 
 # --- core filter logic ---
 
-# Every test sets EMERGE_SYSTEM to a sentinel that produces ONE atom — that
-# way the qlist `$(emerge -epO system | awk)` substitution is non-empty and
-# the qlist call uses the filter-by-atoms path instead of the
-# return-everything path (see the bug note in the qlist stub comment).
+# Tests can leave EMERGE_SYSTEM unset (empty system-set output).  The
+# HIGH#3 fix in regen_world guards the qlist-CI call with an empty-args
+# check, so an empty EMERGE_SYSTEM no longer pollutes pretend with the
+# entire installed list.
 
 @test "regen_world: 'virtual/' atoms are excluded from new world" {
 	QLIST_INSTALLED=$'app-misc/foo\nvirtual/baz'
 	EMERGE_PRETEND=""
-	EMERGE_SYSTEM='sentinel/atom'  # non-empty to avoid the regen_world bug
 	regen_world <<< $'No\nNo\nNo\nNo\n'
 	run cat "${WORLD}"
 	assert_output --partial 'app-misc/foo'
@@ -118,7 +117,6 @@ emerge() {
 @test "regen_world: '*-libs/' atoms are excluded from new world" {
 	QLIST_INSTALLED=$'app-misc/foo\ndev-libs/bar'
 	EMERGE_PRETEND=""
-	EMERGE_SYSTEM='sentinel/atom'
 	regen_world <<< $'No\nNo\nNo\nNo\n'
 	run cat "${WORLD}"
 	assert_output --partial 'app-misc/foo'
@@ -128,7 +126,6 @@ emerge() {
 @test "regen_world: atoms appearing in 'emerge -eopd' pretend are excluded" {
 	QLIST_INSTALLED=$'app-misc/foo\napp-misc/bar'
 	EMERGE_PRETEND='app-misc/foo'
-	EMERGE_SYSTEM='sentinel/atom'
 	regen_world <<< $'No\nNo\nNo\nNo\n'
 	run cat "${WORLD}"
 	assert_output --partial 'app-misc/bar'
@@ -138,15 +135,32 @@ emerge() {
 @test "regen_world: 'Result:' header printed after regeneration" {
 	QLIST_INSTALLED='app-misc/foo'
 	EMERGE_PRETEND=""
-	EMERGE_SYSTEM='sentinel/atom'
 	run regen_world <<< $'No\nNo\nNo\nNo\n'
 	[[ "${output}" == *'Result'* ]]
+}
+
+@test "regen_world: empty emerge -epO system → qlist guard prevents pollution" {
+	# Regression test for HIGH#3.  Pre-fix: an empty EMERGE_SYSTEM made
+	# `qlist -CI $(empty)` return ALL installed → every atom landed in
+	# pretend → @world cleanup was a no-op.  Post-fix: the guard skips
+	# the qlist call entirely when no system atoms are emitted, and the
+	# eopd-only `pretend` is used as-is.
+	QLIST_INSTALLED='app-misc/foo'
+	EMERGE_PRETEND=""        # no deps blocking foo
+	EMERGE_SYSTEM=""         # critical: empty system set
+	regen_world <<< $'No\nNo\nNo\nNo\n'
+	run cat "${WORLD}"
+	# foo must be ADDED to new world (it's not a dep and not virtual/
+	# and not -libs/).  Pre-fix bug would have left WORLD empty because
+	# foo would have been spuriously added to pretend via the qlist
+	# fallback.
+	assert_output --partial 'app-misc/foo'
 }
 
 @test "regen_world: empty installed → empty new world" {
 	QLIST_INSTALLED=""
 	EMERGE_PRETEND=""
-	EMERGE_SYSTEM='sentinel/atom'
+	EMERGE_SYSTEM=""
 	regen_world <<< $'No\nNo\nNo\nNo\n'
 	run cat "${WORLD}"
 	[[ -z "$(tr -d $'\n\t ' <<< "${output}")" ]]
@@ -155,7 +169,7 @@ emerge() {
 @test "regen_world: 'world++:' status emitted for each kept atom" {
 	QLIST_INSTALLED=$'app-misc/foo\napp-misc/bar'
 	EMERGE_PRETEND=""
-	EMERGE_SYSTEM='sentinel/atom'
+	EMERGE_SYSTEM=""
 	run regen_world <<< $'No\nNo\nNo\nNo\n'
 	[[ "${output}" == *'world++:'* ]]
 	[[ "${output}" == *'app-misc/foo'* ]]

@@ -36,6 +36,7 @@ EXTRA_DIST = \
 	tests/integration/backup_path.bats \
 	tests/integration/restore.bats \
 	tests/integration/regen_world.bats \
+	tests/integration/package_env.bats \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats \

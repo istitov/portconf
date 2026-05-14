@@ -526,7 +526,7 @@ rm_comments(){
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
-	file_or_dir "package.*" "Checking comments:" "no_newline" || return 1
+	file_or_dir "package.*" "Checking comments:" "no_newline" || true
 }
 ############################################################################
 ################ rm_all_comments ###########################################
@@ -538,7 +538,7 @@ rm_all_comments(){
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
-	file_or_dir "package.*" "Checking comments:" "no_newline_inline"  || return 1
+	file_or_dir "package.*" "Checking comments:" "no_newline_inline"  || true
 }
 ############################################################################
 ################ sort_uses #################################################
@@ -578,7 +578,7 @@ sort_uses(){
 ############################################################################
 ################ package.use ###############################################
 sort_use_file(){
-	file_or_dir "package.use" "Sorting use flags in" "set -f" "sort_uses" "set +f" || return 1
+	file_or_dir "package.use" "Sorting use flags in" "set -f" "sort_uses" "set +f" || true
 }
 ############################################################################
 ################ stupid_keyword ############################################
@@ -691,12 +691,12 @@ sort_keywords(){
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
-	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "keys" || return 1
+	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "keys" || true
 }
 ############################################################################
 ################ uniq_keyword ##############################################
 uniq_keywords(){
-	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "set -f" "sort_keys" "set +f" || return 1
+	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "set -f" "sort_keys" "set +f" || true
 }
 ############################################################################
 ################ not_installed #############################################
@@ -816,7 +816,7 @@ package_env_conf(){
 			fi
 		done
 	}
-	file_or_dir "package.env" "Checking unused configs in" "check_env_conf" || return 1
+	file_or_dir "package.env" "Checking unused configs in" "check_env_conf" || true
 }
 ############################################################################
 ################ package.env ###############################################
@@ -835,7 +835,19 @@ package_env(){
 					printf '%b\n' "Defined conf not exists: ${red}${conf}${restore}"
 					new_line=$(grep -v "^${conf}$" <<< "$(tr ' ' $'\n' <<< "${line}")" | tr $'\n' ' ' || true)
 					new_line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${new_line}")"
-					sed "s|${line}|${new_line}|" -i "${tmp_file}"
+					# Escape sed metacharacters before interpolating user-
+					# controlled content from package.env into the s|||
+					# pattern.  Without this, lines containing `|`, `\`,
+					# `.`, `[`, `*`, `&` corrupt or silently break the
+					# in-place edit.  Atoms with USE-dep brackets like
+					# `sys-apps/grep[static]` are the most common trigger.
+					_p="${line//\\/\\\\}";     _p="${_p//|/\\|}"
+					_p="${_p//./\\.}";         _p="${_p//\[/\\[}"
+					_p="${_p//\*/\\*}"
+					_r="${new_line//\\/\\\\}"; _r="${_r//|/\\|}"
+					_r="${_r//&/\\&}"
+					sed "s|${_p}|${_r}|" -i "${tmp_file}"
+					unset _p _r
 					line="${new_line}"
 				fi
 			done
@@ -843,7 +855,7 @@ package_env(){
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
-	file_or_dir "package.env" "Checking defined configs in" "package_env_def" || return 1
+	file_or_dir "package.env" "Checking defined configs in" "package_env_def" || true
 }
 ############################################################################
 ################ env not_installed #########################################
@@ -1380,12 +1392,12 @@ all_mask_trash(){
 		masked="$(awk '{print $1}' ${file} | grep -v '^#' || true)"
 		MASKED+="$(package_envs "${masked}")"$'\n'
 	}
-	file_or_dir "package.mask" "Preparing atoms in" "pre_mask_trash" || return 1
+	file_or_dir "package.mask" "Preparing atoms in" "pre_mask_trash" || true
 	pre_unmask_trash(){
 		unmasked="$(awk '{print $1}' ${file} | grep -v '^#' || true)"
 		UNMASKED+="$(package_envs "${unmasked}")"$'\n'
 	}
-	file_or_dir "package.unmask" "Preparing atoms in" "pre_unmask_trash" || return 1
+	file_or_dir "package.unmask" "Preparing atoms in" "pre_unmask_trash" || true
 }
 mask_trash(){
 	TRASH=""
@@ -1403,9 +1415,32 @@ mask_trash(){
 		TRASH+="${mfile} ${msw}${mcategory}/${mpn}-${mver}"$'\n'
 		continue 2
 	}
-	all_mask_trash || return 1
+	# all_mask_trash propagates file_or_dir's "missing target" return
+	# through `|| true` since the patch making file_or_dir callers
+	# tolerate missing optional config.  No file means MASKED/UNMASKED
+	# stay empty → the comparison loop below is a no-op → correct.
+	all_mask_trash || true
 	###### m->masked; u->unmasked
+	export OVERLAYS_LIST="no"
+	export VERSIONONLY='<version> '
+	export FORMAT='<availableversions:VERSIONONLY>'
 	while read msw mcategory mpn mver mrev mslot mfile;do
+		# Hoist the eix call OUT of the inner unmask loop: ${versions} and
+		# ${oldest} depend only on (mcategory, mpn), not on any inner-loop
+		# variable.  Previous nested-call shape was O(N×M) eix forks (up to
+		# 2500 for a typical 50+50 mask/unmask config); now it's O(N).
+		# Resolve unconditionally per outer iteration when mver may be
+		# non-empty after the (null)-strip below — same predicate as the
+		# old version-comparison gate but evaluated once.
+		[[ "${mrev}" == "(null)" || -z "${mrev}" ]] && _mver="${mver}" || _mver="${mver}-${mrev}"
+		[[ "${_mver}" == "(null)" ]] && _mver=""
+		versions=""
+		oldest=""
+		if [[ -n "${_mver}" ]]; then
+			versions="$(eix -e "${mcategory}/${mpn}" || true)"
+			oldest="$(awk '{print $1}' <<< "${versions}" || true)"
+		fi
+		unset _mver
 		while read usw ucategory upn uver urev uslot ufile;do
 			versions_diff=""
 			versions_btwn=""
@@ -1414,10 +1449,11 @@ mask_trash(){
 			[[ "${mver}" == "(null)" ]] && mver=""
 			[[ "${uver}" == "(null)" ]] && uver=""
 
-			if [[ -n "${mver}" || -n "${uver}" ]];then
-				export OVERLAYS_LIST="no"
-				export VERSIONONLY='<version> '
-				export FORMAT='<availableversions:VERSIONONLY>'
+			# Lazy fetch fallback: if mver was empty but THIS unmask entry
+			# has a uver, we still need the version table for ver_diff/
+			# ver_btwn below.  Compute once per outer iteration on first
+			# need (rare path).
+			if [[ -z "${versions}" && -n "${uver}" ]];then
 				versions="$(eix -e "${mcategory}/${mpn}" || true)"
 				oldest="$(awk '{print $1}' <<< "${versions}" || true)"
 			fi
@@ -1507,7 +1543,7 @@ stupid_unmask(){
 	export REDUNDANT_IF_IN_MASK="no"
 	export TEST_FOR_NONEXISTENT="true"
 	export REDUNDANT_IF_UNMASK_NO_CHANGE="all"
-	file_or_dir "package.unmask" "Checking stupid unmasks:" "remove_trash" || return 1
+	file_or_dir "package.unmask" "Checking stupid unmasks:" "remove_trash" || true
 	unset REDUNDANT_IF_IN_UNMASK REDUNDANT_IF_IN_MASK TEST_FOR_NONEXISTENT REDUNDANT_IF_UNMASK_NO_CHANGE
 }
 ############################################################################
@@ -1588,7 +1624,7 @@ etc_profile_use_mask() {
 
 check_use_masked() {
 	for target in $(mask_files);do
-		file_or_dir "profile/${target}" "Checking masked uses:" "etc_profile_use_mask" || return 1
+		file_or_dir "profile/${target}" "Checking masked uses:" "etc_profile_use_mask" || true
 	done
 }
 ############################################################################
@@ -1617,7 +1653,20 @@ regen_world(){
 	# end in $'\n' after the previous line.  Insert one before the next
 	# block, otherwise the last eopd atom is concatenated with the first
 	# qlist atom on a single line and downstream `^atom$` lookups miss.
-	pretend+=$'\n'"$(qlist -CI $(emerge -epO system | awk '/\[/ {print $4}'))"$'\n'
+	#
+	# Guard the qlist call with an explicit empty-check on its atom args:
+	# when `emerge -epO system | awk` produces no output (broken Portage
+	# state, missing system set, etc.), `qlist -CI` with zero atom args
+	# would return the FULL installed list — every atom would then end
+	# up in pretend, every installed atom would match, and @world would
+	# never get cleaned.  Skipping the append in that case is correct:
+	# system-set atoms only narrow pretend; they don't add anything that
+	# wasn't already covered by the eopd output above.
+	_system_atoms="$(emerge -epO system 2>/dev/null | awk '/\[/ {print $4}' || true)"
+	if [[ -n "${_system_atoms}" ]];then
+		pretend+=$'\n'"$(qlist -CI ${_system_atoms} || true)"$'\n'
+	fi
+	unset _system_atoms
 
 	for atom in ${installed};do
 		if ! grep -q "^${atom}$" <<< "${pretend}" && ! grep -q ".*-libs/" <<< "${atom}" && ! grep -q "virtual/" <<< "${atom}";then
