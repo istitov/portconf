@@ -128,7 +128,7 @@ AWK = gawk
 CSCOPE = cscope
 CTAGS = ctags
 CYGPATH_W = echo
-DEFS = -DPACKAGE_NAME=\"portconf\" -DPACKAGE_TARNAME=\"portconf\" -DPACKAGE_VERSION=\"2.0.0\" -DPACKAGE_STRING=\"portconf\ 2.0.0\" -DPACKAGE_BUGREPORT=\"https://github.com/istitov/portconf/issues\" -DPACKAGE_URL=\"\" -DPACKAGE=\"portconf\" -DVERSION=\"2.0.0\"
+DEFS = -DPACKAGE_NAME=\"portconf\" -DPACKAGE_TARNAME=\"portconf\" -DPACKAGE_VERSION=\"2.0.0_rc2\" -DPACKAGE_STRING=\"portconf\ 2.0.0_rc2\" -DPACKAGE_BUGREPORT=\"https://github.com/istitov/portconf/issues\" -DPACKAGE_URL=\"\" -DPACKAGE=\"portconf\" -DVERSION=\"2.0.0_rc2\"
 ECHO_C = 
 ECHO_N = -n
 ECHO_T = 
@@ -146,16 +146,16 @@ MKDIR_P = /usr/bin/mkdir -p
 PACKAGE = portconf
 PACKAGE_BUGREPORT = https://github.com/istitov/portconf/issues
 PACKAGE_NAME = portconf
-PACKAGE_STRING = portconf 2.0.0
+PACKAGE_STRING = portconf 2.0.0_rc2
 PACKAGE_TARNAME = portconf
 PACKAGE_URL = 
-PACKAGE_VERSION = 2.0.0
+PACKAGE_VERSION = 2.0.0_rc2
 PATH_SEPARATOR = :
 SED = /usr/bin/sed
 SET_MAKE = 
 SHELL = /bin/sh
 STRIP = 
-VERSION = 2.0.0
+VERSION = 2.0.0_rc2
 abs_builddir = /home/tis/Public/bash-revival/portconf/packaging
 abs_srcdir = /home/tis/Public/bash-revival/portconf/packaging
 abs_top_builddir = /home/tis/Public/bash-revival/portconf
@@ -198,7 +198,7 @@ target_alias =
 top_build_prefix = ../
 top_builddir = ..
 top_srcdir = ..
-EXTRA_DIST = portconf.ebuild.in portconf-9999.ebuild metadata.xml
+EXTRA_DIST = portconf-9999.ebuild.in metadata.xml
 all: all-am
 
 .SUFFIXES:
@@ -387,10 +387,10 @@ uninstall-am:
 .PRECIOUS: Makefile
 
 
-# Drop a freshly-versioned ebuild + the live (-9999) ebuild + metadata.xml
-# into a local overlay and run `ebuild ... manifest` for the release ebuild
-# (which fetches the dist tarball and writes Manifest).  The 9999 ebuild
-# is copied verbatim — no manifest needed for git-r3 live ebuilds.
+# Drop the live (-9999) ebuild + metadata.xml into a local overlay.
+# Release ebuilds are hand-crafted in the overlay at tag-cut time —
+# the structural delta between live and release (KEYWORDS, SRC_URI,
+# git-r3 inherit, eautoreconf) is too large for a single template.
 # Set OVERLAY_DIR to your overlay's app-portage/portconf directory, e.g.
 #   make ebuild OVERLAY_DIR=/var/db/repos/<your-overlay>/app-portage/portconf
 ebuild:
@@ -399,10 +399,8 @@ ebuild:
 	  exit 1; \
 	}
 	mkdir -p $(OVERLAY_DIR)
-	cp $(srcdir)/portconf.ebuild.in $(OVERLAY_DIR)/portconf-$(VERSION).ebuild
-	cp $(srcdir)/portconf-9999.ebuild $(OVERLAY_DIR)/portconf-9999.ebuild
+	cp $(srcdir)/portconf-9999.ebuild.in $(OVERLAY_DIR)/portconf-9999.ebuild
 	cp $(srcdir)/metadata.xml $(OVERLAY_DIR)/metadata.xml
-	ebuild $(OVERLAY_DIR)/portconf-$(VERSION).ebuild manifest
 
 .PHONY: ebuild
 

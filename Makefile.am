@@ -126,9 +126,9 @@ installcheck-local:
 	echo "ok: $$prog --help"
 
 # 'make ebuild OVERLAY_DIR=...' delegates to packaging/Makefile.am, which
-# drops a versioned ebuild + metadata.xml into the given overlay path
-# and runs `ebuild ... manifest` to fetch the dist tarball and write
-# Manifest.  See packaging/Makefile.am for the exact recipe.
+# drops the live (-9999) ebuild + metadata.xml into the given overlay
+# path.  Release ebuilds are hand-crafted in the overlay at tag-cut
+# time — see packaging/Makefile.am for the exact recipe.
 ebuild:
 	$(MAKE) -C packaging ebuild OVERLAY_DIR=$(OVERLAY_DIR)
 
