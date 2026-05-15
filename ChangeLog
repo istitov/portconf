@@ -1,3 +1,16 @@
+2026-05-15  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.0 — "From the Outta Space"
+
+	CI on 2.0.0_rc2 passed clean on gentoo/stage3:latest — every step
+	green: shellcheck --severity=error, completion-file syntax checks
+	(bash -n / zsh -n), all three bats tiers (178 unit + 70 integration
+	+ 32 smoke + 1 root-conditional), make distcheck.  Source tree
+	promoted unchanged to 2.0.0 final.
+
+	Build:
+	* configure.ac: bump to 2.0.0.
+
 2026-05-14  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.0_rc2 — "First CI Run + Packaging Polish"

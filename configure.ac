@@ -1,4 +1,4 @@
-AC_INIT([portconf],[2.0.0_rc2],[https://github.com/istitov/portconf/issues],[portconf])
+AC_INIT([portconf],[2.0.0],[https://github.com/istitov/portconf/issues],[portconf])
 AM_INIT_AUTOMAKE([dist-xz no-dist-gzip foreign])
 AC_PROG_SED
 
