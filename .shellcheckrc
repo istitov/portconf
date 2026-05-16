@@ -6,9 +6,7 @@
 # running `shellcheck src/portconf` locally without the --severity flag
 # and wanting a low-noise baseline.
 
-# SC2010 (`Don't use ls | grep`): three sites in src/portconf.in
-# (repo_fix, f_to_d, d_to_f) match this pattern.  Each one needs a
-# functional rewrite (find / for-glob with a -name condition) — not a
-# suppression.  They are tracked as a 2.1.0 line item; until then,
-# silence the rule so it doesn't drown out new findings.
-disable=SC2010
+# src/portconf is currently clean at both --severity=error AND
+# --severity=warning with no rule disables required.  This file
+# remains as a project marker and a place to land future class-
+# suppressions if they become warranted.

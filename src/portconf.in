@@ -1258,7 +1258,13 @@ not_found(){
 				done < <(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}')
 			done <<< "${incorrect}"
 		fi
-	done < <(ls -d1 "${PORT_ETC}"/package* | grep -v -e "~" -e "\.bak" -e "\.old" || true)
+	done < <(
+		for package in "${PORT_ETC}"/package*; do
+			[[ -e "${package}" ]] || continue
+			case "${package}" in *~|*.bak|*.old) continue;; esac
+			printf '%s\n' "${package}"
+		done
+	)
 
 	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
 
@@ -1400,7 +1406,13 @@ f_to_d(){
 			printf '%b\n' "${underline}Skipping ${red}directory${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "$(ls -d1 "${PORT_ETC}"/package* | grep -v "~" || true)"
+	done <<< "$(
+		for package in "${PORT_ETC}"/package*; do
+			[[ -e "${package}" ]] || continue
+			[[ "${package}" == *~ ]] && continue
+			printf '%s\n' "${package}"
+		done
+	)"
 }
 ############################################################################
 ################ package.* dirs 2 files ####################################
@@ -1424,7 +1436,13 @@ d_to_f(){
 			printf '%b\n' "${underline}Skipping ${red}file${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
 		fi
-	done <<< "$(ls -d1 "${PORT_ETC}"/package* | grep -v "~" || true)"
+	done <<< "$(
+		for package in "${PORT_ETC}"/package*; do
+			[[ -e "${package}" ]] || continue
+			[[ "${package}" == *~ ]] && continue
+			printf '%s\n' "${package}"
+		done
+	)"
 }
 ############################################################################
 ################ version diff ##############################################
