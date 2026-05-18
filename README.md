@@ -1,6 +1,7 @@
 # portconf
 
 [![CI](https://github.com/istitov/portconf/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/istitov/portconf/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/istitov/portconf?display_name=tag&sort=semver)](https://github.com/istitov/portconf/releases/latest)
 
 **Gentoo `/etc/portage` configuration cleaner and manager.**
 
