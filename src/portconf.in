@@ -1,6 +1,12 @@
 #!/bin/bash
 # Copyright megabaks
 # Distributed under the terms of the GNU General Public License v3 or later
+# ============================================================================
+# === PRELUDE & HELPERS
+# === set -e and EINFO_QUIET setup; NO_COLOR/TTY-gated ANSI codes;
+# === _tmpfiles/_cleanup/trap; _mktemp, _sed_escape_pat/_rep, _tput, _cols.
+# ============================================================================
+
 ############################################################################
 ################ portage functions #########################################
 # Source Gentoo helpers before strict mode: functions.sh uses ${KSH_VERSION}
@@ -88,6 +94,13 @@ _cols() {
 		echo 80
 	fi
 }
+# ============================================================================
+# === INIT
+# === Version, env-overridable path roots (PKGDB/BRDIR/PORT_ETC/WORLD/DEP_PATH/
+# === PORTCONF_CONF), state-var defaults, ARCH probe, /etc/portconf.conf source,
+# === COUNT default, IGNORE pattern computation.  All source-time effects.
+# ============================================================================
+
 ############################################################################
 ################ init ######################################################
 PACKAGE_VERSION="@PACKAGE_VERSION@"
@@ -130,6 +143,14 @@ ${IGNORE_PN}"
 	IGNORE="${IGNORE:-'Hello, LOR! :3'}"
 }
 _compute_ignore
+# ============================================================================
+# === PROFILE RESOLUTION
+# === Resolves /etc/make.profile -> effective profile USE flags.
+# === sort_passed_uses, profile, all_use_all_profiles, profile_use, current_profile.
+# === Source-time side effect (after profile() def): pre_profile / profile_uses /
+# === PROFILE.  test_helper.bash resets PROFILE="" post-source.
+# ============================================================================
+
 ############################################################################
 ################ sort_passed_uses ##########################################
 sort_passed_uses(){
@@ -206,6 +227,14 @@ current_profile(){
 	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w "$(_cols)"
 	unset USEs
 }
+# ============================================================================
+# === make.conf USE BASELINE
+# === Sources /etc/portage/make.conf (or legacy /etc/make.conf) to populate
+# === MAKE_USES — the host USE-flag state used by use_makeconf / invalid_uses
+# === to detect redundant entries.  Source-time only (no func defs).
+# === test_helper.bash resets MAKE_USES="" post-source.
+# ============================================================================
+
 ############################################################################
 ################ make.conf #################################################
 makefile=""
@@ -222,11 +251,24 @@ fi
 MAKE_USES="${USE:-}"
 unset USE
 PORTDIR="${PORTDIR:-/usr/portage}"
+# ============================================================================
+# === TIMESTAMP
+# === timestamp — newest mtime across globs; used by backup/world_backup/overlays
+# === for "is the snapshot stale?" decisions.
+# ============================================================================
+
 ############################################################################
 ################ timestamp #################################################
 timestamp(){
 	stat -c %Y "${@}" 2>/dev/null | sort | tail -n1 || true
 }
+# ============================================================================
+# === EIX BOOTSTRAP
+# === repo_fix, rm_repo_fix, eix_check, eix_method.  -rc/--regen-cache builds a
+# === fresh temp eix cache (eix_check); default reuses the host cache
+# === (eix_method, prompts if rebuild needed).
+# ============================================================================
+
 ############################################################################
 ################ repo fix ##################################################
 repo_fix(){
@@ -297,6 +339,13 @@ eix_method(){
 		exit 1
 	fi
 }
+# ============================================================================
+# === BACKUP & RESTORE
+# === backup, world_backup, restore, etc_restore, world_restore.
+# === backup() runs unconditionally for every mutating arm (PRETEND gates the
+# === downstream ops, not backup itself).  Snapshots land in $BRDIR.
+# ============================================================================
+
 ############################################################################
 ################ backup ####################################################
 backup(){
@@ -402,6 +451,12 @@ etc_restore(){
 world_restore(){
 	restore "${BRDIR}/world" "world" "${WORLD}" "${WORLD%world}"
 }
+# ============================================================================
+# === INTERACTIVE PROMPTS
+# === diff_ask, remove_ask.  Bash `select` prompts driving mutating ops;
+# === bats feeds these via `run <<< "...stdin..."`.
+# ============================================================================
+
 ############################################################################
 ################ diff_ask ##################################################
 diff_ask(){
@@ -497,6 +552,13 @@ remove_ask(){
 		eend 0 2>/dev/null
 	fi
 }
+# ============================================================================
+# === PACKAGE.* FILE OPS
+# === sort_uniq_files, file_or_dir, rm_comments, rm_all_comments.
+# === Generic operations over $PORT_ETC/package.*.  file_or_dir is the
+# === type-agnostic walker most -t/-f subroutines build on.
+# ============================================================================
+
 ############################################################################
 ################ sort_packages #############################################
 sort_uniq_files(){
@@ -597,6 +659,12 @@ rm_all_comments(){
 	}
 	file_or_dir "package.*" "Checking comments:" "no_newline_inline"  || true
 }
+# ============================================================================
+# === USE FLAG SORT
+# === sort_uses, sort_use_file.  Per-atom USE-list sort/dedup, last-state-wins
+# === for repeated flags.  Used by -us/-uf/-s/-f.
+# ============================================================================
+
 ############################################################################
 ################ sort_uses #################################################
 sort_uses(){
@@ -642,6 +710,13 @@ sort_uses(){
 sort_use_file(){
 	file_or_dir "package.use" "Sorting use flags in" "set -f" "sort_uses" "set +f" || true
 }
+# ============================================================================
+# === KEYWORDS
+# === stupid_keywords, sort_keys, sort_keywords, uniq_keywords.
+# === package.accept_keywords / package.keywords sort + dedup.  Used by
+# === -ku/-ko/-s/-f.
+# ============================================================================
+
 ############################################################################
 ################ stupid_keyword ############################################
 stupid_keywords(){
@@ -764,6 +839,12 @@ sort_keywords(){
 uniq_keywords(){
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "set -f" "sort_keys" "set +f" || true
 }
+# ============================================================================
+# === INSTALL-STATE FILTERS
+# === installed, not_if, force_not_installed.  Filter atoms against $PKGDB;
+# === backbone of -t/-ft.
+# ============================================================================
+
 ############################################################################
 ################ not_installed #############################################
 installed(){
@@ -862,6 +943,12 @@ force_not_installed(){
 		fi
 	done < <(find "${PORT_ETC}"/package* -type f)
 }
+# ============================================================================
+# === PACKAGE.ENV
+# === package_env_conf, package_env, env_not_installed.  Cleanup of
+# === $PORT_ETC/package.env entries and the env/ subdir files they reference.
+# ============================================================================
+
 ############################################################################
 ################ package.env conf ##########################################
 package_env_conf(){
@@ -993,6 +1080,13 @@ env_not_installed(){
 	done
 	eend $? 2>/dev/null
 }
+# ============================================================================
+# === USE FLAG ANALYSIS
+# === invalid_uses, make_conf_use, hell_parser, invalid_uses_make.
+# === Detects invalid/redundant USE flags against eix metadata.  Heavy
+# === sed/agrep pipeline; see HIGH#1 in ChangeLog for the sed-injection fix.
+# ============================================================================
+
 ############################################################################
 ################ incorrect uses ############################################
 invalid_uses(){
@@ -1223,6 +1317,12 @@ invalid_uses_make(){
 	diff_ask "${makefile}" "${tmp_file}"
 	# `local -` at function entry restores set -f state on return.
 }
+# ============================================================================
+# === ATOM VALIDATION
+# === not_found.  Detects atoms that no longer match any ebuild
+# === (renamed/removed upstream).  Used by -t/-ft/-f.
+# ============================================================================
+
 ############################################################################
 ################ not_found #################################################
 not_found(){
@@ -1333,6 +1433,13 @@ not_found(){
 	fi
 	unset invalid broken_files
 }
+# ============================================================================
+# === make.conf USE SYNC
+# === use_makeconf.  Detects USE flags duplicated between make.conf USE and
+# === per-package files (the profile-shadow-in-make.conf case).  Used by
+# === -um/-uf/-f.
+# ============================================================================
+
 ############################################################################
 ################ profile's uses in make.conf ###############################
 use_makeconf(){
@@ -1356,6 +1463,12 @@ use_makeconf(){
 	diff_ask "${makefile}" "${tmp_file}"
 	eend $? 2>/dev/null
 }
+# ============================================================================
+# === FILE MAINTENANCE
+# === empty_files, backup_files, f_to_d, d_to_f.  Tidy operations: drop empty
+# === files, drop *~ / .bak / .old backups, convert package.* files <-> dirs.
+# ============================================================================
+
 ############################################################################
 ################ empty files ###############################################
 empty_files(){
@@ -1444,6 +1557,12 @@ d_to_f(){
 		done
 	)"
 }
+# ============================================================================
+# === VERSION COMPARE
+# === ver_diff, ver_btwn.  Atom version comparison helpers; used by mask_trash
+# === to detect overlapping/redundant mask entries.
+# ============================================================================
+
 ############################################################################
 ################ version diff ##############################################
 ver_diff(){
@@ -1490,6 +1609,13 @@ package_envs(){
 		done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]|%[pfx]' "${atom}")"
 	done
 }
+# ============================================================================
+# === MASK / UNMASK CLEANUP
+# === package_envs, all_mask_trash, mask_trash, remove_trash, stupid_unmask.
+# === Detect/remove obsolete mask + unmask entries; used by -sm/-sum/-t/-ft/-f.
+# === package_envs parses modern qatom -F output (see ChangeLog dcd0265).
+# ============================================================================
+
 ############################################################################
 ################ mask/unmask trash #########################################
 all_mask_trash(){
@@ -1665,6 +1791,13 @@ stupid_unmask(){
 	file_or_dir "package.unmask" "Checking stupid unmasks:" "remove_trash" || true
 	unset REDUNDANT_IF_IN_UNMASK REDUNDANT_IF_IN_MASK TEST_FOR_NONEXISTENT REDUNDANT_IF_UNMASK_NO_CHANGE
 }
+# ============================================================================
+# === PROFILE MASK USE
+# === sort_uniq_mask_use, profile_masked_uses, mask_files, use_mask,
+# === etc_profile_use_mask, check_use_masked.  Profile use.mask / use.force
+# === handling.  Used by -s/-sup/-uf/-f.
+# ============================================================================
+
 ############################################################################
 ################ stupid mask/unmask uses ###################################
 sort_uniq_mask_use(){
@@ -1746,6 +1879,12 @@ check_use_masked() {
 		file_or_dir "profile/${target}" "Checking masked uses:" "etc_profile_use_mask" || true
 	done
 }
+# ============================================================================
+# === WORLD REBUILD
+# === regen_world.  Rebuilds /var/lib/portage/world from `emerge -epO system` +
+# === qlist -CI, filtering virtuals / *-libs / in-pretend atoms.  Used by -wg.
+# ============================================================================
+
 ############################################################################
 ################ regen_world ###############################################
 regen_world(){
@@ -1859,6 +1998,12 @@ regen_world(){
 	printf '%b\n' "\n${green}Result${restore}:"
 	cat "${WORLD}"
 }
+# ============================================================================
+# === OVERLAYS
+# === overlays.  Remove unused overlays declared in $PORT_ETC/repos.conf and
+# === stale $DEP_PATH metadata.  Used by -fr.
+# ============================================================================
+
 ############################################################################
 ################ unused repo and dep-cache #################################
 overlays(){
@@ -2051,6 +2196,12 @@ overlays(){
 	echo "done"
 	eend 0 2>/dev/null
 }
+# ============================================================================
+# === HELP TEXT
+# === help_pc.  The --help output; the eix_dep_keys flag table in DISPATCH
+# === below must stay in sync with this text.
+# ============================================================================
+
 ############################################################################
 ################ help ######################################################
 help_pc(){
@@ -2101,6 +2252,13 @@ ${contrast}Misc${restore}:
 
 OPTIONS must be separated by SPACE."
 }
+# ============================================================================
+# === DISPATCH  (run_it)
+# === PORTCONF_NO_MAIN sourcing guard, flag pre-strip (--yes, --pretend),
+# === eix bootstrap decision (eix_check vs eix_method), then the case
+# === dispatcher that calls the right combo of funcs for each user flag.
+# ============================================================================
+
 ############################################################################
 ################ run_it ####################################################
 eix_dep_keys="--use-invalid
