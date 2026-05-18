@@ -7,8 +7,6 @@
 # === _tmpfiles/_cleanup/trap; _mktemp, _sed_escape_pat/_rep, _tput, _cols.
 # ============================================================================
 
-############################################################################
-################ portage functions #########################################
 # Source Gentoo helpers before strict mode: functions.sh uses ${KSH_VERSION}
 # without a default and is not set -u-safe.
 if [[ -f "/lib/gentoo/functions.sh" ]]; then
@@ -22,8 +20,6 @@ set -euo pipefail
 # functions.sh references EINFO_QUIET without a default; initialize it so
 # eend/einfo calls work under set -u.
 EINFO_QUIET="${EINFO_QUIET:-}"
-############################################################################
-################ colors ####################################################
 # ANSI color codes are emitted only when stdout is a TTY AND NO_COLOR is
 # unset (https://no-color.org).  Piping output to a file or grep would
 # otherwise leak terminal escape sequences into machine-readable output.
@@ -36,9 +32,8 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
 else
 	green=""; red=""; restore=""; contrast=""; underline=""
 fi
-############################################################################
-################ cleanup ###################################################
 _tmpfiles=()
+# _cleanup: remove every temp file registered via _mktemp; runs from the EXIT trap.
 _cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; :; }
 trap _cleanup EXIT
 
@@ -101,8 +96,6 @@ _cols() {
 # === COUNT default, IGNORE pattern computation.  All source-time effects.
 # ============================================================================
 
-############################################################################
-################ init ######################################################
 PACKAGE_VERSION="@PACKAGE_VERSION@"
 # All four path roots honor an environment override for testability and
 # unusual prefixes (e.g. ROOT=/mnt/chroot installs).  Defaults match the
@@ -125,8 +118,6 @@ PORTCONF_CONF="${PORTCONF_CONF:-/etc/portconf.conf}"
 # shellcheck source=/dev/null  # user-supplied at runtime; not statically resolvable
 [[ -f "${PORTCONF_CONF}" ]] && . "${PORTCONF_CONF}"
 COUNT="${COUNT:-10}"
-############################################################################
-################ ignore ####################################################
 # Expand IGNORE_CATEGORY and IGNORE_PN (set by /etc/portconf.conf as
 # space-separated names) into newline-separated grep regex patterns:
 #   IGNORE_CATEGORY="dev-lang" → "dev-lang/.*"   (match any package in cat)
@@ -151,8 +142,7 @@ _compute_ignore
 # === PROFILE.  test_helper.bash resets PROFILE="" post-source.
 # ============================================================================
 
-############################################################################
-################ sort_passed_uses ##########################################
+# sort_passed_uses: dedup a space-separated USE-flag list; last-defined state wins.
 sort_passed_uses(){
 	uses=""
 	for opt in ${1};do
@@ -166,8 +156,7 @@ sort_passed_uses(){
 	echo "${_a[*]}"
 	unset uses _a
 }
-############################################################################
-################ profile ###################################################
+# profile: recursively read profile USE flags by walking parent files.
 profile() {
 	local use path USE=""
 	# Profile make.defaults files reference vars from parent profiles that
@@ -193,8 +182,7 @@ pre_profile=""
 [[ -h "${PORT_ETC}/make.profile" ]] && pre_profile="$(profile "$(readlink -f "${PORT_ETC}/make.profile")")"
 profile_uses="$(sort_passed_uses "${pre_profile}")"
 PROFILE="$(tr "[:space:]" $'\n' <<< "${profile_uses}")"
-############################################################################
-################ all_use_all_profiles ######################################
+# all_use_all_profiles: print effective USE flags for every profile available via eselect.
 all_use_all_profiles(){
 	for target in $(eselect --brief profile list);do
 		profile_uses="$(profile "${PORTDIR}/profiles/${target}")"
@@ -203,8 +191,7 @@ all_use_all_profiles(){
 		unset USEs
 	done
 }
-############################################################################
-################ profile_use ###############################################
+# profile_use: interactive `select` — print USE flags for a chosen profile.
 profile_use(){
 	PS3="$(printf '%b\n' "${contrast}Choose number:${restore} ")"
 	select target in $(eselect --brief profile list);do
@@ -215,8 +202,7 @@ profile_use(){
 		break
 	done
 }
-############################################################################
-################ current_profile ###########################################
+# current_profile: print USE flags for the currently active profile.
 current_profile(){
 	if [[ -h "/etc/make.profile" ]];then
 		target="$(readlink /etc/make.profile | sed 's|.*/profiles/||')"
@@ -235,8 +221,6 @@ current_profile(){
 # === test_helper.bash resets MAKE_USES="" post-source.
 # ============================================================================
 
-############################################################################
-################ make.conf #################################################
 makefile=""
 [[ -f "/etc/make.conf" ]] && makefile="/etc/make.conf"
 [[ -f "${PORT_ETC}/make.conf" ]] && makefile="${PORT_ETC}/make.conf"
@@ -257,8 +241,7 @@ PORTDIR="${PORTDIR:-/usr/portage}"
 # === for "is the snapshot stale?" decisions.
 # ============================================================================
 
-############################################################################
-################ timestamp #################################################
+# timestamp: newest mtime across the given globs (empty if none exist).
 timestamp(){
 	stat -c %Y "${@}" 2>/dev/null | sort | tail -n1 || true
 }
@@ -269,8 +252,7 @@ timestamp(){
 # === (eix_method, prompts if rebuild needed).
 # ============================================================================
 
-############################################################################
-################ repo fix ##################################################
+# repo_fix: merge declared overlays' categories into Portage's view for this run.
 repo_fix(){
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
@@ -287,8 +269,7 @@ repo_fix(){
 		done
 	fi
 }
-############################################################################
-################ rm repo fix ###############################################
+# rm_repo_fix: undo repo_fix — remove the merged-in overlay categories.
 rm_repo_fix(){
 	if [[ -n "${tmp_categories}" ]];then
 		for tmp_category in ${tmp_categories};do
@@ -296,8 +277,7 @@ rm_repo_fix(){
 		done
 	fi
 }
-############################################################################
-################ eix check #################################################
+# eix_check: build a fresh eix metadata cache in a temp file (-rc mode).
 eix_check(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		printf '%b\n' "${underline}Creating new temporary cache.${restore}"
@@ -314,8 +294,7 @@ eix_check(){
 	fi
 	rm_repo_fix
 }
-############################################################################
-################ eix check method ##########################################
+# eix_method: reuse the host's eix cache, prompting if a rebuild is needed.
 eix_method(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		if [[ "$(eix --print OVERLAY_CACHE_METHOD)" != "parse|ebuild*" ]];then
@@ -346,8 +325,7 @@ eix_method(){
 # === downstream ops, not backup itself).  Snapshots land in $BRDIR.
 # ============================================================================
 
-############################################################################
-################ backup ####################################################
+# backup: tar /etc/portage to $BRDIR with rotation; called by every mutating flag.
 backup(){
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
 	tarballs="$(ls -1 --color=never "${BRDIR}")"
@@ -389,8 +367,7 @@ backup(){
 		eend $? 2>/dev/null
 	fi
 }
-############################################################################
-################ world_backup ##############################################
+# world_backup: tar the world file to $BRDIR/world/ with rotation; idempotent on no-change.
 world_backup(){
 	world_dir="${BRDIR}/world"
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
@@ -414,8 +391,7 @@ world_backup(){
 		eend $? 2>/dev/null
 	fi
 }
-############################################################################
-################ restore ###################################################
+# restore: interactive — pick a backup tarball and extract over the target tree.
 restore(){
 	tarballs="$(ls -1 --color=never "${1}"/*.bz2)"
 	tarballs="${tarballs//${1}\/}"
@@ -438,16 +414,14 @@ restore(){
 		break
 	done
 }
-############################################################################
-################ etc_restore ###############################################
+# etc_restore: wrapper — restore() applied to the /etc/portage snapshot set.
 etc_restore(){
 	# Tar extract destination is the parent dir of PORT_ETC (the tarball
 	# contains a "portage" subdir as its top-level entry — see backup()).
 	# 5th arg = PORT_ETC itself: restore() wipes its contents before extract.
 	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC%/*}/" "${PORT_ETC}"
 }
-############################################################################
-################ world_restore #############################################
+# world_restore: wrapper — restore() applied to the world-file snapshot set.
 world_restore(){
 	restore "${BRDIR}/world" "world" "${WORLD}" "${WORLD%world}"
 }
@@ -457,8 +431,7 @@ world_restore(){
 # === bats feeds these via `run <<< "...stdin..."`.
 # ============================================================================
 
-############################################################################
-################ diff_ask ##################################################
+# diff_ask: show a diff for each pending change and prompt accept/skip/all.
 diff_ask(){
 	full_diff=""
 	my_diff="$(diff "${1}" "${2}" | grep --color=never "[[:digit:]][a-z][[:digit:]]" || true)"
@@ -527,8 +500,7 @@ diff_ask(){
 	rm "${2}" 2>/dev/null
 	return 0
 }
-############################################################################
-################ remove_ask ################################################
+# remove_ask: prompt for confirmation before removing entries from package.* files.
 remove_ask(){
 	if [[ -z "${yes}" && -z "${PRETEND}" ]];then
 		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
@@ -559,8 +531,7 @@ remove_ask(){
 # === type-agnostic walker most -t/-f subroutines build on.
 # ============================================================================
 
-############################################################################
-################ sort_packages #############################################
+# sort_uniq_files: sort + dedupe lines in every package.* file under $PORT_ETC.
 sort_uniq_files(){
 	while IFS= read -r package; do
 		tmp_sort="$(_mktemp)"
@@ -578,8 +549,7 @@ sort_uniq_files(){
 		eend $? 2>/dev/null
 	done < <(find "${PORT_ETC}/" -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true)
 }
-############################################################################
-################ file or dir... ############################################
+# file_or_dir: walker — apply a callback over package.* entries (file or directory).
 file_or_dir(){
 	local founded=""
 	for i in ${1};do
@@ -635,8 +605,7 @@ file_or_dir(){
 		fi
 	done
 }
-############################################################################
-################ rm_comments ###############################################
+# rm_comments: strip standalone comment lines from package.* files.
 rm_comments(){
 	no_newline(){
 		tmp_file="$(_mktemp)"
@@ -647,8 +616,7 @@ rm_comments(){
 	}
 	file_or_dir "package.*" "Checking comments:" "no_newline" || true
 }
-############################################################################
-################ rm_all_comments ###########################################
+# rm_all_comments: strip all comments (standalone + trailing) from package.* files.
 rm_all_comments(){
 	no_newline_inline(){
 		tmp_file="$(_mktemp)"
@@ -665,8 +633,7 @@ rm_all_comments(){
 # === for repeated flags.  Used by -us/-uf/-s/-f.
 # ============================================================================
 
-############################################################################
-################ sort_uses #################################################
+# sort_uses: sort + dedupe USE flags on a single atom line; last-state-wins.
 sort_uses(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
@@ -705,8 +672,7 @@ sort_uses(){
 	diff_ask "${file}" "${striped}"
 	eend $? 2>/dev/null
 }
-############################################################################
-################ package.use ###############################################
+# sort_use_file: walker — sort_uses applied across every package.use entry.
 sort_use_file(){
 	file_or_dir "package.use" "Sorting use flags in" "set -f" "sort_uses" "set +f" || true
 }
@@ -717,8 +683,7 @@ sort_use_file(){
 # === -ku/-ko/-s/-f.
 # ============================================================================
 
-############################################################################
-################ stupid_keyword ############################################
+# stupid_keywords: remove non-arch-prefixed keywords that duplicate plain-arch entries.
 stupid_keywords(){
 	unset ACCEPT_KEYWORDS
 	local ACCEPT_KEYWORDS
@@ -764,8 +729,7 @@ stupid_keywords(){
 		done < "${1}"
 	done
 }
-############################################################################
-################ sort_keys #################################################
+# sort_keys: sort a single keyword line, preserving prefix (~, -, **).
 sort_keys(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
@@ -807,8 +771,7 @@ sort_keys(){
 	diff_ask "${file}" "${striped}"
 	eend $? 2>/dev/null
 }
-############################################################################
-################ one_keyword ###############################################
+# sort_keywords: keep only the most-recent keyword spec per atom.
 sort_keywords(){
 	keys(){
 		tmp_file="$(_mktemp)"
@@ -834,8 +797,7 @@ sort_keywords(){
 	}
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "keys" || true
 }
-############################################################################
-################ uniq_keyword ##############################################
+# uniq_keywords: sort + dedupe keyword entries across every package.accept_keywords file.
 uniq_keywords(){
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "set -f" "sort_keys" "set +f" || true
 }
@@ -845,8 +807,7 @@ uniq_keywords(){
 # === backbone of -t/-ft.
 # ============================================================================
 
-############################################################################
-################ not_installed #############################################
+# installed: filter — keep only atoms that resolve to an installed package.
 installed(){
 	all_vers=""
 	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}')"
@@ -869,6 +830,7 @@ installed(){
 	fi
 }
 
+# not_if: filter — keep only atoms whose target is NOT installed.
 not_if(){
 	atoms="$(awk '{print $1}' <<< "$(grep -v "^#" < "${package}")" || true)"
 	[[ -n "${IGNORE}" ]] && atoms="$(grep -v "${IGNORE}" <<< "${atoms}" || true)"
@@ -917,6 +879,7 @@ not_if(){
 	fi
 }
 
+# force_not_installed: stricter not_if — also remove unmatchable atoms unconditionally.
 force_not_installed(){
 	while IFS= read -r package; do
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}" || true)" ]];then
@@ -949,8 +912,7 @@ force_not_installed(){
 # === $PORT_ETC/package.env entries and the env/ subdir files they reference.
 # ============================================================================
 
-############################################################################
-################ package.env conf ##########################################
+# package_env_conf: remove package.env entries whose env file no longer exists.
 package_env_conf(){
 	# `find` exits 1 if ${PORT_ETC}/env doesn't exist (common: most users
 	# never use per-package env), and command substitution propagates that
@@ -978,8 +940,7 @@ package_env_conf(){
 	}
 	file_or_dir "package.env" "Checking unused configs in" "check_env_conf" || true
 }
-############################################################################
-################ package.env ###############################################
+# package_env: remove package.env entries for uninstalled atoms.
 package_env(){
 	package_env_def(){
 		tmp_file="$(_mktemp)"
@@ -1017,8 +978,7 @@ package_env(){
 	}
 	file_or_dir "package.env" "Checking defined configs in" "package_env_def" || true
 }
-############################################################################
-################ env not_installed #########################################
+# env_not_installed: remove env/ files no longer referenced by any package.env entry.
 env_not_installed(){
 	RM=""
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
@@ -1087,8 +1047,7 @@ env_not_installed(){
 # === sed/agrep pipeline; see HIGH#1 in ChangeLog for the sed-injection fix.
 # ============================================================================
 
-############################################################################
-################ incorrect uses ############################################
+# invalid_uses: remove invalid or redundant USE flags from package.use against eix metadata.
 invalid_uses(){
 	# `local -` (bash 4.4+) snapshots the current shell-option state and
 	# restores it on function return, no matter how we exit (normal, set
@@ -1105,7 +1064,6 @@ invalid_uses(){
 		GLOBAL+=" $(echo ${FULL} | tr "[:space:]" $'\n' | grep -e "^${opt#-}$" -e "^-${opt#-}$" | tail -n1 || true)"
 	done
 	GLOBAL="$(echo ${GLOBAL} | tr "[:space:]" $'\n' | sort -u)"
-############################################################################
 	check_uses(){
 		printf '%b\n' "${underline}Checking use flags in${restore} ${contrast}${file#${PORT_ETC}/}${restore}:"
 		##### eix env #####
@@ -1267,19 +1225,20 @@ invalid_uses(){
 	_tput cnorm
 	# `local -` at function entry restores set -f state on return.
 }
-############################################################################
-################ incorrect uses in make.conf ###############################
+# make_conf_use: emit make.conf's NAME="..." assignment line (single- or multi-line form).
 make_conf_use() {
 	defined_flags="$(grep "${1}=\".*\"" "${makefile}" || true)"
 	defined_flags="${defined_flags:-"$(sed -ne "/${1}=\"/,/\"/p" "${makefile}")"}"
 	echo "${defined_flags}"
 }
 
+# hell_parser: extract eix-stored IUSE for a package via the eix -e fields.
 hell_parser(){
 	sed -e 's|[[:space:]]| |g' -e :a -e '/\\$/N; s/\\\n//; ta' | \
 	cut -d\" -f2 | tr "[[:space:]]" $'\n' | sed '/^$/d;s|^-||g'  | sort -u
 }
 
+# invalid_uses_make: remove USE flags from make.conf that don't exist on any installed package.
 invalid_uses_make(){
 	invalid_uses=""
 	# See invalid_uses for the `local -` rationale.
@@ -1323,8 +1282,7 @@ invalid_uses_make(){
 # === (renamed/removed upstream).  Used by -t/-ft/-f.
 # ============================================================================
 
-############################################################################
-################ not_found #################################################
+# not_found: remove atoms in package.* that no longer match any ebuild.
 not_found(){
 	INVALID_FOUNDED=""
 	printf '%b\n' "${underline}Checking invalid entries${restore}..."
@@ -1440,8 +1398,7 @@ not_found(){
 # === -um/-uf/-f.
 # ============================================================================
 
-############################################################################
-################ profile's uses in make.conf ###############################
+# use_makeconf: remove per-package USE entries already covered by make.conf USE.
 use_makeconf(){
 	printf '%b\n' "${underline}Checking use flags in${restore} ${contrast}${makefile##/etc*/}${restore}"
 	USE="$(printf '%b\n' "${MAKE_USES}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
@@ -1469,8 +1426,7 @@ use_makeconf(){
 # === files, drop *~ / .bak / .old backups, convert package.* files <-> dirs.
 # ============================================================================
 
-############################################################################
-################ empty files ###############################################
+# empty_files: remove zero-byte and comments-only files anywhere under $PORT_ETC.
 empty_files(){
 	printf '%b\n' "${underline}Looking empty files${restore}"
 	while IFS= read -r target; do
@@ -1478,8 +1434,7 @@ empty_files(){
 	done < <(find "${PORT_ETC}" -type f)
 	eend 0 2>/dev/null
 }
-############################################################################
-################ backup files ##############################################
+# backup_files: remove editor backups (*~, *.bak, *.old) from $PORT_ETC.
 backup_files(){
 	printf '%b\n' "${underline}Looking backup files${restore}"
 	while IFS= read -r target; do
@@ -1487,8 +1442,7 @@ backup_files(){
 	done < <(find "${PORT_ETC}" -type f \( -name "*~" -o  -name "*.bak" -o -name "*.old" \))
 	eend 0 2>/dev/null
 }
-############################################################################
-################ package.* files 2 dirs ####################################
+# f_to_d: convert package.* from flat-file to directory layout.
 f_to_d(){
 	# Guard the `set -f` inside the inner read loop below with `local -`
 	# so a mid-loop early-exit doesn't leave globbing disabled for the
@@ -1527,8 +1481,7 @@ f_to_d(){
 		done
 	)"
 }
-############################################################################
-################ package.* dirs 2 files ####################################
+# d_to_f: convert package.* from directory layout back to flat-file.
 d_to_f(){
 	while IFS= read -r package;do
 		if [[ -d "${package}" ]];then
@@ -1563,16 +1516,14 @@ d_to_f(){
 # === to detect overlapping/redundant mask entries.
 # ============================================================================
 
-############################################################################
-################ version diff ##############################################
+# ver_diff: echo 1 if $1>$2, 2 if $2>$1, 0 if equal (empty on parse failure).
 ver_diff(){
 	check="$(versionsort ${1} ${2} 2>/dev/null | tail -n1)"
 	[[ "${check}" == "${1}" && "${check}" != "${2}" ]] && echo 1 # ${1} > ${2}
 	[[ "${check}" == "${2}" && "${check}" != "${1}" ]] && echo 2 # ${2} > ${1}
 	[[ "${check}" == "${1}" && "${check}" == "${2}" ]] && echo 0 # ${1} = ${2}
 }
-############################################################################
-################ version between ###########################################
+# ver_btwn: echo 1 if any version in $3 lies strictly between $1 and $2 (empty otherwise).
 ver_btwn(){
 	for between in ${3};do
 		if [[ "$(ver_diff "${1}" "${between}" || true)" == "1" && "$(ver_diff "${2}" "${between}" || true)" == "2" ]];then
@@ -1581,7 +1532,7 @@ ver_btwn(){
 		fi
 	done
 }
-############################################################################
+# package_envs: parse qatom -F output into the column-aligned format mask helpers expect.
 package_envs(){
 	for atom in ${1};do
 		# portage-utils 0.97+ default qatom output emits the comparison
@@ -1616,8 +1567,7 @@ package_envs(){
 # === package_envs parses modern qatom -F output (see ChangeLog dcd0265).
 # ============================================================================
 
-############################################################################
-################ mask/unmask trash #########################################
+# all_mask_trash: scan all package.mask + package.unmask for stale or overlapping entries.
 all_mask_trash(){
 	MASKED=""
 	UNMASKED=""
@@ -1632,6 +1582,7 @@ all_mask_trash(){
 	}
 	file_or_dir "package.unmask" "Preparing atoms in" "pre_unmask_trash" || true
 }
+# mask_trash: core mask-cleanup pass — uses qatom + ver_btwn to spot redundancies.
 mask_trash(){
 	TRASH=""
 	# Helper functions used to fire `continue 2` to skip the rest of the
@@ -1756,8 +1707,7 @@ mask_trash(){
 	done
 	unset TRASH OVERLAYS_LIST VERSIONONLY FORMAT MASKED UNMASKED versions oldest versions_diff versions_btwn
 }
-############################################################################
-################ looking trash #############################################
+# remove_trash: delete entries flagged as trash; companion to all_mask_trash.
 remove_trash(){
 	tmp_file="$(_mktemp)"
 	cp "${file}" "${tmp_file}"
@@ -1781,8 +1731,7 @@ remove_trash(){
 	diff_ask "${file}" "${tmp_file}"
 	eend $? 2>/dev/null
 }
-############################################################################
-################ stupid unmask #############################################
+# stupid_unmask: remove unmask entries for atoms that aren't actually masked.
 stupid_unmask(){
 	export REDUNDANT_IF_IN_UNMASK="all"
 	export REDUNDANT_IF_IN_MASK="no"
@@ -1798,8 +1747,7 @@ stupid_unmask(){
 # === handling.  Used by -s/-sup/-uf/-f.
 # ============================================================================
 
-############################################################################
-################ stupid mask/unmask uses ###################################
+# sort_uniq_mask_use: sort + dedupe profile-level use.mask / use.force entries.
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
 		while IFS= read -r package; do
@@ -1816,6 +1764,7 @@ sort_uniq_mask_use(){
 	fi
 }
 
+# profile_masked_uses: collect USE flags masked by the current profile (recurses via parent).
 profile_masked_uses() {
 	all_uses=""
 	file="${1}/${2}"
@@ -1829,6 +1778,7 @@ profile_masked_uses() {
 	fi
 }
 
+# mask_files: list profile mask files to consider (honours ACCEPT_KEYWORDS).
 mask_files() {
 	if grep -q "~" <<< "$(eix --print ACCEPT_KEYWORDS)";then
 		echo "use.mask"
@@ -1837,6 +1787,7 @@ mask_files() {
 	fi
 }
 
+# use_mask: extract USE-flag masks from the current profile chain.
 use_mask() {
 	makeprof=""
 	[[ -h "/etc/make.profile" ]] && makeprof="/etc/make.profile"
@@ -1847,6 +1798,7 @@ use_mask() {
 	sort_passed_uses "${all_uses} " | tr "[:space:]" $'\n'
 }
 
+# etc_profile_use_mask: merge profile masks with $PORT_ETC/profile/use.mask.
 etc_profile_use_mask() {
 	if [[ -f "${PORT_ETC}/profile/use.mask" ]];then
 		orig_file="${PORT_ETC}/profile/use.mask"
@@ -1874,6 +1826,7 @@ etc_profile_use_mask() {
 	diff_ask "${orig_file}" "${tmp_file}"
 }
 
+# check_use_masked: remove USE flags from package.use that are already profile-masked.
 check_use_masked() {
 	for target in $(mask_files);do
 		file_or_dir "profile/${target}" "Checking masked uses:" "etc_profile_use_mask" || true
@@ -1885,8 +1838,7 @@ check_use_masked() {
 # === qlist -CI, filtering virtuals / *-libs / in-pretend atoms.  Used by -wg.
 # ============================================================================
 
-############################################################################
-################ regen_world ###############################################
+# regen_world: rebuild /var/lib/portage/world from emerge -epO system + qlist filters.
 regen_world(){
 	notrash_pkgs=""
 	tmp_world="$(_mktemp)"
@@ -2004,8 +1956,7 @@ regen_world(){
 # === stale $DEP_PATH metadata.  Used by -fr.
 # ============================================================================
 
-############################################################################
-################ unused repo and dep-cache #################################
+# overlays: remove unused overlays from $PORT_ETC/repos.conf and stale $DEP_PATH metadata.
 overlays(){
 	UNUSED=""
 	TRASH_REPO=""
@@ -2202,8 +2153,7 @@ overlays(){
 # === below must stay in sync with this text.
 # ============================================================================
 
-############################################################################
-################ help ######################################################
+# help_pc: the --help output; canonical flag inventory (dispatcher table must stay in sync).
 help_pc(){
 printf '%b\n' \
 "Usage: portconf [OPTION] [OPTION]…[OPTION]
@@ -2259,8 +2209,6 @@ OPTIONS must be separated by SPACE."
 # === dispatcher that calls the right combo of funcs for each user flag.
 # ============================================================================
 
-############################################################################
-################ run_it ####################################################
 eix_dep_keys="--use-invalid
 -ui
 --use-make

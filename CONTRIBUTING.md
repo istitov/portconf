@@ -82,9 +82,10 @@ section (don't leave it floating between sections); when adding a whole
 new topical area, copy an existing banner as the template and keep the
 five-line shape so `make toc` keeps working.
 
-The per-function `################ name ################` headers below
-each section banner are the older one-marker-per-function layer — keep
-adding those too for new functions.
+Every function has a one-line docstring of the form `# name: brief
+description.` directly above its definition.  Add one for any new
+function; keep the description ground-truth (echoes what it does, not
+the call sites).
 
 ## Adding a new flag
 
