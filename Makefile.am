@@ -132,4 +132,14 @@ installcheck-local:
 ebuild:
 	$(MAKE) -C packaging ebuild OVERLAY_DIR=$(OVERLAY_DIR)
 
-.PHONY: check-integration check-smoke installcheck-local ebuild
+# 'make toc' prints the topical section index from src/portconf.in.  Each
+# section is a five-line banner whose name line starts with `# === `; the
+# preceding line is the `# ==========...` fence used to disambiguate from
+# inline `# === Source-time side effect:` notes inside a banner.  See the
+# section banners themselves for what each section covers.
+toc:
+	@awk '/^# =====/ {f=1; next} \
+	      f && /^# === [A-Za-z]/ {printf "  %4d  %s\n", NR, substr($$0, 7); f=0; next} \
+	      {f=0}' $(srcdir)/src/portconf.in
+
+.PHONY: check-integration check-smoke installcheck-local ebuild toc

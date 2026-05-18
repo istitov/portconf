@@ -63,6 +63,29 @@ requirements:
    the same baseline.  Lower-severity findings are tracked (see deferred
    items in [`ChangeLog`](ChangeLog)) but don't block.
 
+## Source layout
+
+`src/portconf.in` is organised into 24 topical sections.  Each section is
+introduced by a banner of the form:
+
+```
+# ============================================================================
+# === SECTION NAME
+# === Brief description.  Function list.
+# === [optional source-time-side-effect note]
+# ============================================================================
+```
+
+Run `make toc` from the project root to see the full section index with
+line numbers.  When adding a function, drop it under the right existing
+section (don't leave it floating between sections); when adding a whole
+new topical area, copy an existing banner as the template and keep the
+five-line shape so `make toc` keeps working.
+
+The per-function `################ name ################` headers below
+each section banner are the older one-marker-per-function layer — keep
+adding those too for new functions.
+
 ## Adding a new flag
 
 A new flag typically needs changes in five places:
