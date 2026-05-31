@@ -165,6 +165,34 @@ _assert_port_etc_unchanged() {
 
 # --- profile-listing already covered by profile.bats; world-state arm ---
 
+@test "smoke: interactive Yes mutates when package.use is a directory" {
+	# Regression for the file_or_dir directory-branch stdin-redirect bug.
+	# When package.use is a directory (the modern Gentoo layout), file_or_dir
+	# iterates its fragments via `done < <(find ...)`; the process-
+	# substitution clobbers fd 0 for the loop body, so the nested
+	# diff_ask's `read x` would hit EOF instead of the user's "Yes"
+	# answer and silently rm the tmp file without mutating PORT_ETC.
+	# diff_ask now reads from fd 9 (dispatch-entry stdin dup) instead.
+	# Needs UID==0 because diff_ask's Yes branch gates mv on root.
+	(( UID != 0 )) && skip "needs root for diff_ask mv branch"
+	rm -f "${SMOKE_PORT_ETC}/package.use"
+	mkdir "${SMOKE_PORT_ETC}/package.use"
+	printf 'sys-apps/grep static\nsys-apps/grep static\nsys-apps/grep -static\n' \
+		> "${SMOKE_PORT_ETC}/package.use/grep"
+	run env \
+		PORT_ETC="${SMOKE_PORT_ETC}" \
+		BRDIR="${SMOKE_BRDIR}" \
+		PKGDB="${SMOKE_PKGDB}" \
+		DEP_PATH="${SMOKE_DEP}" \
+		"${PORTCONF_BIN}" -us <<< $'Yes\n'
+	[ "$status" -eq 0 ]
+	# Without the fix: 3 lines unchanged.  With the fix: sort_uses collapses
+	# duplicates and last-state ("-static") wins, leaving one normalised line.
+	local content
+	content="$(cat "${SMOKE_PORT_ETC}/package.use/grep")"
+	[[ "${content}" == 'sys-apps/grep -static' ]]
+}
+
 @test "smoke: -y -p -wb — world_backup standalone" {
 	# WORLD defaults to /var/lib/portage/world (real host path).  For
 	# isolated smoke testing point it at the sandbox.  Tarball lands in
