@@ -93,7 +93,8 @@ _cols() {
 # === INIT
 # === Version, env-overridable path roots (PKGDB/BRDIR/PORT_ETC/WORLD/DEP_PATH/
 # === PORTCONF_CONF), state-var defaults, ARCH probe, /etc/portconf.conf source,
-# === COUNT default, IGNORE pattern computation.  All source-time effects.
+# === COUNT default, IGNORE pattern computation.  _compute_ignore is defined
+# === here and invoked immediately below; everything else is source-time only.
 # ============================================================================
 
 PACKAGE_VERSION="@PACKAGE_VERSION@"
@@ -325,7 +326,7 @@ eix_method(){
 # === downstream ops, not backup itself).  Snapshots land in $BRDIR.
 # ============================================================================
 
-# backup: tar /etc/portage to $BRDIR with rotation; called by every mutating flag.
+# backup: tar $PORT_ETC to $BRDIR with rotation; called by every mutating flag (incl. under --pretend).
 backup(){
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
 	tarballs="$(ls -1 --color=never "${BRDIR}")"
@@ -692,7 +693,7 @@ sort_use_file(){
 # === -ku/-ko/-s/-f.
 # ============================================================================
 
-# stupid_keywords: remove non-arch-prefixed keywords that duplicate plain-arch entries.
+# stupid_keywords: remove per-package keywords that already match the system ACCEPT_KEYWORDS or a wildcard parent entry.
 stupid_keywords(){
 	unset ACCEPT_KEYWORDS
 	local ACCEPT_KEYWORDS
@@ -738,7 +739,7 @@ stupid_keywords(){
 		done < "${1}"
 	done
 }
-# sort_keys: sort a single keyword line, preserving prefix (~, -, **).
+# sort_keys: for each atom in $file, sort + dedupe its keyword list (last-state-wins); fills in ~$ARCH if empty.
 sort_keys(){
 	atom_opts=""
 	tmp_file="$(_mktemp)"
@@ -806,7 +807,7 @@ sort_keywords(){
 	}
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "keys" || true
 }
-# uniq_keywords: sort + dedupe keyword entries across every package.accept_keywords file.
+# uniq_keywords: sort + dedupe keyword entries across every package.keywords and package.accept_keywords file.
 uniq_keywords(){
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "set -f" "sort_keys" "set +f" || true
 }
@@ -816,7 +817,7 @@ uniq_keywords(){
 # === backbone of -t/-ft.
 # ============================================================================
 
-# installed: filter — keep only atoms that resolve to an installed package.
+# installed: probe — set $installed to the qlist output if $category/$pn is installed, else "".
 installed(){
 	all_vers=""
 	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}')"
@@ -839,7 +840,7 @@ installed(){
 	fi
 }
 
-# not_if: filter — keep only atoms whose target is NOT installed.
+# not_if: remove atoms in $package whose target package is NOT installed (keep installed ones).
 not_if(){
 	atoms="$(awk '{print $1}' <<< "$(grep -v "^#" < "${package}")" || true)"
 	[[ -n "${IGNORE}" ]] && atoms="$(grep -v "${IGNORE}" <<< "${atoms}" || true)"
@@ -888,7 +889,7 @@ not_if(){
 	fi
 }
 
-# force_not_installed: stricter not_if — also remove unmatchable atoms unconditionally.
+# force_not_installed: walk every package.* file under $PORT_ETC (excl. .mask) calling not_if; drop empty files.
 force_not_installed(){
 	while IFS= read -r package; do
 		if [[ -s "${package}" && -n "$(grep -v "^#" < "${package}" || true)" ]];then
@@ -921,7 +922,7 @@ force_not_installed(){
 # === $PORT_ETC/package.env entries and the env/ subdir files they reference.
 # ============================================================================
 
-# package_env_conf: remove package.env entries whose env file no longer exists.
+# package_env_conf: remove env/ conf files no longer referenced by any package.env entry.
 package_env_conf(){
 	# `find` exits 1 if ${PORT_ETC}/env doesn't exist (common: most users
 	# never use per-package env), and command substitution propagates that
@@ -949,7 +950,7 @@ package_env_conf(){
 	}
 	file_or_dir "package.env" "Checking unused configs in" "check_env_conf" || true
 }
-# package_env: remove package.env entries for uninstalled atoms.
+# package_env: remove package.env conf references whose env/ file doesn't exist on disk.
 package_env(){
 	package_env_def(){
 		tmp_file="$(_mktemp)"
@@ -987,7 +988,7 @@ package_env(){
 	}
 	file_or_dir "package.env" "Checking defined configs in" "package_env_def" || true
 }
-# env_not_installed: remove env/ files no longer referenced by any package.env entry.
+# env_not_installed: remove env/<cat>/<pn> files whose target package is not installed.
 env_not_installed(){
 	RM=""
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
@@ -1241,13 +1242,13 @@ make_conf_use() {
 	echo "${defined_flags}"
 }
 
-# hell_parser: extract eix-stored IUSE for a package via the eix -e fields.
+# hell_parser: parse a NAME="v1 v2 \<cont>" assignment (one- or multi-line) into one value per line, stripping leading `-`.
 hell_parser(){
 	sed -e 's|[[:space:]]| |g' -e :a -e '/\\$/N; s/\\\n//; ta' | \
 	cut -d\" -f2 | tr "[[:space:]]" $'\n' | sed '/^$/d;s|^-||g'  | sort -u
 }
 
-# invalid_uses_make: remove USE flags from make.conf that don't exist on any installed package.
+# invalid_uses_make: remove USE flags from make.conf not present in any known IUSE (per `eix --print-all-useflags`).
 invalid_uses_make(){
 	invalid_uses=""
 	# See invalid_uses for the `local -` rationale.
@@ -1401,13 +1402,13 @@ not_found(){
 	unset invalid broken_files
 }
 # ============================================================================
-# === make.conf USE SYNC
-# === use_makeconf.  Detects USE flags duplicated between make.conf USE and
-# === per-package files (the profile-shadow-in-make.conf case).  Used by
-# === -um/-uf/-f.
+# === make.conf USE PRUNE
+# === use_makeconf.  Removes USE flags from make.conf that are already
+# === defined by the profile (the profile-shadow-in-make.conf case).
+# === Used by -um/-uf/-f.
 # ============================================================================
 
-# use_makeconf: remove per-package USE entries already covered by make.conf USE.
+# use_makeconf: remove make.conf USE entries already defined by the profile (profile-shadow-in-make.conf cleanup).
 use_makeconf(){
 	printf '%b\n' "${underline}Checking use flags in${restore} ${contrast}${makefile##/etc*/}${restore}"
 	USE="$(printf '%b\n' "${MAKE_USES}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
@@ -1541,6 +1542,13 @@ ver_btwn(){
 		fi
 	done
 }
+# ============================================================================
+# === MASK / UNMASK CLEANUP
+# === package_envs, all_mask_trash, mask_trash, remove_trash, stupid_unmask.
+# === Detect/remove obsolete mask + unmask entries; used by -sm/-sum/-t/-ft/-f.
+# === package_envs parses modern qatom -F output (see ChangeLog 7e5ccd7).
+# ============================================================================
+
 # package_envs: parse qatom -F output into the column-aligned format mask helpers expect.
 package_envs(){
 	for atom in ${1};do
@@ -1569,13 +1577,6 @@ package_envs(){
 		done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]|%[pfx]' "${atom}")"
 	done
 }
-# ============================================================================
-# === MASK / UNMASK CLEANUP
-# === package_envs, all_mask_trash, mask_trash, remove_trash, stupid_unmask.
-# === Detect/remove obsolete mask + unmask entries; used by -sm/-sum/-t/-ft/-f.
-# === package_envs parses modern qatom -F output (see ChangeLog dcd0265).
-# ============================================================================
-
 # all_mask_trash: scan all package.mask + package.unmask for stale or overlapping entries.
 all_mask_trash(){
 	MASKED=""
@@ -1752,11 +1753,11 @@ stupid_unmask(){
 # ============================================================================
 # === PROFILE MASK USE
 # === sort_uniq_mask_use, profile_masked_uses, mask_files, use_mask,
-# === etc_profile_use_mask, check_use_masked.  Profile use.mask / use.force
+# === etc_profile_use_mask, check_use_masked.  Profile use.mask / use.stable.mask
 # === handling.  Used by -s/-sup/-uf/-f.
 # ============================================================================
 
-# sort_uniq_mask_use: sort + dedupe profile-level use.mask / use.force entries.
+# sort_uniq_mask_use: sort + dedupe profile-level use.mask / use.stable.mask entries.
 sort_uniq_mask_use(){
 	if [[ -d "${PORT_ETC}/profile" || -h "${PORT_ETC}/profile" ]];then
 		while IFS= read -r package; do
@@ -1807,7 +1808,7 @@ use_mask() {
 	sort_passed_uses "${all_uses} " | tr "[:space:]" $'\n'
 }
 
-# etc_profile_use_mask: merge profile masks with $PORT_ETC/profile/use.mask.
+# etc_profile_use_mask: remove redundant entries from $PORT_ETC/profile/use.mask already handled by the profile chain.
 etc_profile_use_mask() {
 	if [[ -f "${PORT_ETC}/profile/use.mask" ]];then
 		orig_file="${PORT_ETC}/profile/use.mask"
@@ -1835,7 +1836,7 @@ etc_profile_use_mask() {
 	diff_ask "${orig_file}" "${tmp_file}"
 }
 
-# check_use_masked: remove USE flags from package.use that are already profile-masked.
+# check_use_masked: process $PORT_ETC/profile/use.{mask,stable.mask} via etc_profile_use_mask to drop redundant entries.
 check_use_masked() {
 	for target in $(mask_files);do
 		file_or_dir "profile/${target}" "Checking masked uses:" "etc_profile_use_mask" || true
@@ -1843,11 +1844,13 @@ check_use_masked() {
 }
 # ============================================================================
 # === WORLD REBUILD
-# === regen_world.  Rebuilds /var/lib/portage/world from `emerge -epO system` +
-# === qlist -CI, filtering virtuals / *-libs / in-pretend atoms.  Used by -wg.
+# === regen_world.  Rebuilds /var/lib/portage/world: writes `qlist -CI` as a
+# === draft, subtracts the full `emerge -eopd --with-bdeps=y world` tree
+# === (narrowed by `emerge -epO system` + qlist), drops virtuals / *-libs,
+# === then interactively walks `emerge -pc` candidates to add back.  Used by -wg.
 # ============================================================================
 
-# regen_world: rebuild /var/lib/portage/world from emerge -epO system + qlist filters.
+# regen_world: rebuild $WORLD: keep installed atoms not pulled in by `emerge -eopd --with-bdeps=y world` (filtered through `emerge -epO system` + qlist), excluding virtuals/*-libs; then interactively walk `emerge -pc` candidates.
 regen_world(){
 	notrash_pkgs=""
 	tmp_world="$(_mktemp)"
