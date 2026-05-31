@@ -41,7 +41,9 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
 
 - **`qatom -F` re-parse drift** — silent misclassification of mask
   atoms when a future `portage-utils` reshuffles the `qatom` output
-  format.  The 2.0.0 `dcd0265` / `3fc5391` fixes are the reference
+  format.  The 2.0.0 `7e5ccd7` (`package_envs` modernised for qatom
+  0.97+) and `0bf7162` (HIGH#1 — `sed`-injection in `package_env`,
+  plus the `file_or_dir` diagnostic cascade) fixes are the reference
   for why this class is in scope.
 
 ## Out of scope
