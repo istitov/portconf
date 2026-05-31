@@ -1,3 +1,78 @@
+2026-05-31  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.1 — "Read From Behind"
+
+	Patch release for one real bug + a post-audit accuracy pass on the
+	in-tree comments and shipped docs.
+
+	The bug: every interactive Yes/No prompt in diff_ask / remove_ask
+	was silently dropping the user's answer when called from inside an
+	outer `done < <(find ...)` loop — sort_uniq_files, file_or_dir's
+	directory branch, force_not_installed, empty_files, backup_files.
+	Net effect on a modern Gentoo host where /etc/portage/package.* is
+	a directory of fragment files: every diff_ask in the -s / -us /
+	-uf / -t arms looked normal, but the planned mutation was silently
+	thrown away.  -y users were unaffected (the auto-apply branch
+	bypasses the read).  Smoke tier didn't catch it because every
+	smoke test ran with -p.
+
+	Source-side fixes:
+	* src/portconf.in (diff_ask, remove_ask, dispatch entry):
+	  prompt reads now come from fd 9 — a dup of the dispatch-entry
+	  stdin established once via `exec 9<&0` before any loop body
+	  runs.  fd 9 specifically because bats reserves fd 3 for its
+	  own output channel; a fd-3 dup would make the unit tests read
+	  bats's stream instead of the heredoc-fed stdin.  Falls back to
+	  fd 0 when fd 9 isn't open (PORTCONF_NO_MAIN sourcing).
+	* src/portconf.in: PORTDIR default migrated from the 2014-era
+	  /usr/portage to the modern /var/db/repos/gentoo.  Only fires
+	  when neither env nor make.conf sets PORTDIR (i.e. chroot,
+	  test-harness, minimal-host fallback) — every realistic Gentoo
+	  install sets PORTDIR via make.conf and is unaffected.
+
+	Tests:
+	* tests/smoke/mutating_flags.bats: new regression — set up
+	  package.use as a directory, run -us without -y while feeding
+	  "Yes" on stdin, assert the fragment was normalised.  Skipped
+	  on non-root hosts (diff_ask's Yes branch gates mv on UID==0).
+	  Without the fix, the file would stay untouched and the test
+	  would fail.
+
+	Accuracy pass on docstrings + section banners (comment-only,
+	behaviour unchanged):
+	* src/portconf.in: 17 docstring inaccuracies fixed, in five
+	  classes — three direction inversions (not_if, installed,
+	  use_makeconf), three description rotations (package_env_conf
+	  / package_env / env_not_installed), one outright-wrong subject
+	  (hell_parser claimed to parse eix IUSE fields; actually parses
+	  any NAME="..." shell assignment), and ten cases of factual
+	  drift (wrong filename, wrong scope, stale flag names, omitted
+	  branches).
+	* src/portconf.in: four section-banner copy errors fixed —
+	  PROFILE MASK USE (use.force → use.stable.mask), WORLD REBUILD
+	  (cited the wrong primary source command), INIT ("All source-
+	  time effects" was misleading: _compute_ignore is a function
+	  def), make.conf USE SYNC (renamed to make.conf USE PRUNE so
+	  banner direction matches function direction).
+	* src/portconf.in: package_envs() relocated from VERSION COMPARE
+	  to MASK / UNMASK CLEANUP — the latter banner named it, the
+	  former contained it.  No caller change (bash function lookup
+	  is name-based, not source-order).
+
+	Docs:
+	* SECURITY.md: the `qatom -F re-parse drift` in-scope entry cited
+	  two SHAs (`dcd0265` and `3fc5391`) that don't resolve in the
+	  repo — carried forward from the HIGH#1 commit body's narrative
+	  without re-validation.  Replaced with the real anchors:
+	  7e5ccd7 (package_envs modernised for qatom 0.97+) and 0bf7162
+	  (HIGH#1 sed-injection + file_or_dir diagnostic cascade).
+	* README.md: corrected user-facing counts — 281 tests (179 unit
+	  + 70 integration + 32 smoke) was reported as 280; 31 flags /
+	  9 categories was reported as 35 / 8.
+
+	Build:
+	* configure.ac: bump to 2.0.1.
+
 2026-05-15  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.0 — "From the Outta Space"
