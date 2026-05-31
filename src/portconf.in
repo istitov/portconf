@@ -235,7 +235,13 @@ if [[ -n "${makefile}" ]]; then
 fi
 MAKE_USES="${USE:-}"
 unset USE
-PORTDIR="${PORTDIR:-/usr/portage}"
+# Default Portage tree location moved from /usr/portage to /var/db/repos/gentoo
+# in the 2018-2019 Portage refresh.  The default only fires if neither the
+# environment nor make.conf (sourced just above) sets PORTDIR — real systems
+# almost always have one of those, so this is the chroot/test/minimal-host
+# fallback.  /usr/portage is no longer a sensible default on any current
+# Gentoo install.
+PORTDIR="${PORTDIR:-/var/db/repos/gentoo}"
 # ============================================================================
 # === TIMESTAMP
 # === timestamp — newest mtime across globs; used by backup/world_backup/overlays
