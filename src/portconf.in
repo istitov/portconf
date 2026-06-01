@@ -1951,9 +1951,60 @@ sort_uniq_mask_use(){
 			tmp_sort="$(_mktemp)"
 			printf '%b\n' "${underline}Sorting${restore} ${contrast}${package#${PORT_ETC}/}${restore}"
 
-			masked_uses="$(grep -v "^#" "${package}" || true)"
-
-			sort_passed_uses "${masked_uses}" | tr "[:space:]" $'\n' > ${tmp_sort}
+			# Flat-list comment-preserving dedup.  These files are one
+			# USE flag per line (or whitespace-separated tokens) with
+			# no atoms — each flag's "header" is the consecutive
+			# comment + blank lines immediately above it.  Last-state-
+			# wins per base, output in last-occurrence order (matches
+			# legacy sort_passed_uses behaviour) with each flag's
+			# header emitted just above the flag.
+			awk '
+				/^[[:space:]]*$|^[[:space:]]*#/ {
+					pending_header = pending_header $0 "\n"
+					next
+				}
+				{
+					# Each non-comment line may have multiple tokens.
+					nf = split($0, tokens, /[[:space:]]+/)
+					for (k = 1; k <= nf; k++) {
+						tok = tokens[k]
+						if (tok == "") continue
+						base = tok
+						sub(/^-/, "", base)
+						# First token of the line picks up the pending
+						# header; later tokens on the same line have no
+						# header.
+						if (!(base in seen)) {
+							seen[base] = 1
+							headers[base] = (k == 1 ? pending_header : "")
+							order[++count] = base
+						} else if (k == 1 && pending_header != "" && headers[base] == "") {
+							headers[base] = pending_header
+						}
+						last_state[base] = tok
+						last_order[base] = count + (k * 0.001)
+					}
+					pending_header = ""
+				}
+				END {
+					# Sort bases by their LAST-occurrence ordering so the
+					# output mirrors sort_passed_uses (last-position
+					# wins).
+					nb = 0
+					for (base in last_order) bases[++nb] = base
+					for (i = 2; i <= nb; i++) {
+						tmp = bases[i]
+						for (j = i; j > 1 && last_order[bases[j-1]] > last_order[tmp]; j--)
+							bases[j] = bases[j-1]
+						bases[j] = tmp
+					}
+					for (i = 1; i <= nb; i++) {
+						b = bases[i]
+						printf "%s%s\n", headers[b], last_state[b]
+					}
+					if (pending_header != "") printf "%s", pending_header
+				}
+			' "${package}" > "${tmp_sort}"
 
 			diff_ask "${package}" "${tmp_sort}"
 			eend $? 2>/dev/null

@@ -85,13 +85,20 @@ write_use_mask() {
 
 # --- comment handling ---
 
-@test "sort_uniq_mask_use: comment lines stripped" {
-	write_use_mask "foo" "# keep foo masked" "bar"
+@test "sort_uniq_mask_use: header comment preserved above its flag" {
+	# A comment block above a flag travels with that flag through the
+	# sort + dedup pass.
+	write_use_mask "foo" "# keep bar masked" "bar"
 	sort_uniq_mask_use
-	run bash -c "grep -c '^#' '${TEST_PORT_ETC}/profile/use.mask' || true"
-	assert_output "0"
-	run grep "^foo$" "${TEST_PORT_ETC}/profile/use.mask"
-	assert_output "foo"
+	run cat "${TEST_PORT_ETC}/profile/use.mask"
+	assert_output "$(printf 'foo\n# keep bar masked\nbar')"
+}
+
+@test "sort_uniq_mask_use: trailing comments preserved at EOF" {
+	write_use_mask "foo" "# trailing note about the file"
+	sort_uniq_mask_use
+	run cat "${TEST_PORT_ETC}/profile/use.mask"
+	assert_output "$(printf 'foo\n# trailing note about the file')"
 }
 
 # --- use.stable.mask ---
