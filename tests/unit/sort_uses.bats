@@ -5,11 +5,14 @@
 # sort_use_file finds package.use (file or directory), sets the external
 # `file` variable, then calls sort_uses which:
 #   - collects all flags for each atom across duplicate lines
-#   - calls sort_passed_uses to resolve conflicts (last occurrence wins)
-#   - strips whole-line comments
-#   - preserves inline comments
-#   - removes atom entries with no remaining flags
-#   - sorts output lines alphabetically
+#   - resolves conflicts per atom by last-occurrence-wins per USE base
+#   - groups each atom with the consecutive comment + blank lines above
+#     it ("header block") so the block travels with the atom on sort
+#   - preserves inline trailing comments on the atom line
+#   - preserves trailing comments at end of file verbatim
+#   - removes atom entries with no remaining flags (dropping their
+#     header block too, since the atom is gone)
+#   - sorts output lines alphabetically by atom
 #
 # Tests use yes=1 (auto-apply) so diff_ask commits every change.
 
@@ -88,11 +91,44 @@ write_use() { printf '%s\n' "$@" > "${TEST_PORT_ETC}/package.use"; }
 
 # --- comments ---
 
-@test "sort_uses: whole-line comment stripped" {
-	write_use "# comment" "app-misc/foo bar"
+@test "sort_uses: comment block above atom — preserved with the atom" {
+	# Header travels with the atom.
+	write_use "# header comment" "app-misc/foo bar"
 	sort_use_file
 	run cat "${TEST_PORT_ETC}/package.use"
-	assert_output "app-misc/foo bar"
+	assert_output "$(printf '# header comment\napp-misc/foo bar')"
+}
+
+@test "sort_uses: multi-line header — all lines preserved with atom" {
+	write_use "# line 1" "# line 2" "app-misc/foo bar"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# line 1\n# line 2\napp-misc/foo bar')"
+}
+
+@test "sort_uses: header blocks travel with their atom on sort" {
+	write_use \
+		"# header for zzz" "zzz-app/last flag" \
+		"# header for aaa" "aaa-app/first flag"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# header for aaa\naaa-app/first flag\n# header for zzz\nzzz-app/last flag')"
+}
+
+@test "sort_uses: trailing comments (no atom after) — preserved at end" {
+	write_use "app-misc/foo bar" "# trailing"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf 'app-misc/foo bar\n# trailing')"
+}
+
+@test "sort_uses: bare-atom case — header dropped along with the atom" {
+	# When sort_uses leaves an atom with no flags (which then gets
+	# dropped), its header would be orphaned.  Drop the header too.
+	write_use "# this header annotates the dropped atom" "app-misc/foo"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output ""
 }
 
 @test "sort_uses: inline comment preserved" {

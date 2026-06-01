@@ -692,43 +692,94 @@ rm_all_comments(){
 # === for repeated flags.  Used by -us/-uf/-s/-f.
 # ============================================================================
 
-# sort_uses: sort + dedupe USE flags on a single atom line; last-state-wins.
+# sort_uses: sort + dedupe USE flags per atom in $file (last-state-wins); preserve header + inline comments.
 sort_uses(){
-	atom_opts=""
 	tmp_file="$(_mktemp)"
-	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
-	for atom in ${PACKAGES};do
-		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-		# The substitution produces a single space-separated string of USE
-		# flag tokens for this atom; sort_passed_uses below tokenises on
-		# whitespace.  Direct append (was a one-iteration `for` loop before
-		# — shellcheck SC2066 — same semantics, less code).
-		atom_opts+="$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)"
-		uses="$(sort_passed_uses "${atom_opts}")"
-		uses="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${uses}")"
-		if [[ -n "${comment}" ]];then
-			echo "${atom} ${uses} #${comment}" >> "${tmp_file}"
-		else
-			echo "${atom} ${uses}" >> "${tmp_file}"
-		fi
-		unset atom option options uses comment
-		atom_opts=""
-	done
-	cp "${tmp_file}" "${striped}" 2>/dev/null
 
-	while read atom opt;do
-		# `${atom}` can contain sed-regex metacharacters (`.` in versions,
-		# `[` in USE-dep brackets, `*` in glob deps).  Escape before
-		# interpolating; otherwise the in-place edit silently misses
-		# entries that don't match the regex literally.
-		[[ -z "${opt}" ]] && sed -e "s|^$(_sed_escape_pat "${atom}") ||" -i "${striped}" 2>/dev/null
-		unset atom opt
-	done < "${tmp_file}"
-	sed -e 's/[ \t]*$//' -e '/^$/d' -e 's|  | |g' -e "s| - | |g" -i "${striped}" 2>/dev/null
-	sort -u "${striped}" -o "${striped}" 2>/dev/null
-	rm "${tmp_file}" 2>/dev/null
-	diff_ask "${file}" "${striped}"
+	# Comment-preserving rewrite, same gawk approach as sort_uniq_files
+	# plus the per-atom last-state-wins normalisation that used to live
+	# in sort_passed_uses.  Inline trailing comments survive on their
+	# atom line; whole-line `#` comments + blank lines form header
+	# blocks that travel with their atom on sort; trailing comments at
+	# EOF emit verbatim.  Atoms that resolve to no remaining USE flags
+	# AND have no inline comment are dropped, taking their header with
+	# them (matches the old bare-atom-drop semantics).
+	awk '
+		function resolve_uses(tokens,    a, n, i, j, base, last_state, ordering, bases, nb, tmp, out) {
+			delete last_state
+			delete ordering
+			n = split(tokens, a, /[[:space:]]+/)
+			for (i = 1; i <= n; i++) {
+				if (a[i] == "") continue
+				base = a[i]
+				sub(/^-/, "", base)
+				last_state[base] = a[i]
+				ordering[base] = i
+			}
+			nb = 0
+			for (base in ordering) bases[++nb] = base
+			# Insertion sort by ordering value (ascending = first-seen first
+			# in the result, matching the old sort_passed_uses output order).
+			for (i = 2; i <= nb; i++) {
+				tmp = bases[i]
+				for (j = i; j > 1 && ordering[bases[j-1]] > ordering[tmp]; j--)
+					bases[j] = bases[j-1]
+				bases[j] = tmp
+			}
+			out = ""
+			for (i = 1; i <= nb; i++)
+				out = (out == "" ? last_state[bases[i]] : out " " last_state[bases[i]])
+			return out
+		}
+
+		/^[[:space:]]*$|^[[:space:]]*#/ {
+			pending_header = pending_header $0 "\n"
+			next
+		}
+
+		{
+			atom = $1
+			rest = substr($0, length($1) + 1)
+			sub(/^[[:space:]]+/, "", rest)
+
+			# Detect trailing inline comment ("...flags # text").
+			inline_comment = ""
+			if (match(rest, /[[:space:]]+#/) > 0) {
+				# RSTART = leading whitespace, RLENGTH = ws + 1 for the `#`.
+				inline_comment = substr(rest, RSTART + RLENGTH - 1)
+				rest = substr(rest, 1, RSTART - 1)
+			}
+
+			if (!(atom in atoms)) {
+				atoms[atom] = rest
+				inline_comments[atom] = inline_comment
+				headers[atom] = pending_header
+			} else {
+				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
+				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
+			}
+			pending_header = ""
+		}
+
+		END {
+			n = asorti(atoms, sorted)
+			for (i = 1; i <= n; i++) {
+				a = sorted[i]
+				resolved = resolve_uses(atoms[a])
+				if (resolved == "" && inline_comments[a] == "")
+					continue   # drop bare atom and its header
+				if (resolved == "")
+					printf "%s%s %s\n", headers[a], a, inline_comments[a]
+				else if (inline_comments[a] == "")
+					printf "%s%s %s\n", headers[a], a, resolved
+				else
+					printf "%s%s %s %s\n", headers[a], a, resolved, inline_comments[a]
+			}
+			if (pending_header != "") printf "%s", pending_header
+		}
+	' "${file}" > "${tmp_file}"
+
+	diff_ask "${file}" "${tmp_file}"
 	eend $? 2>/dev/null
 }
 # sort_use_file: walker — sort_uses applied across every package.use entry.
