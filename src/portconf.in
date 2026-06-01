@@ -1373,7 +1373,9 @@ invalid_uses(){
 		# loops (one over $file, one over $tmp_file) — checking the
 		# tmp_file alone catches both the user-written-bare and the
 		# prepare-made-bare cases.
-		_bare_atoms="$(awk 'NF == 1 { print $1 }' "${tmp_file}")"
+		# NF==1 AND not a comment — a comment-only line `#single-token` would
+		# also be NF==1 but isn't a bare atom; exclude via the regex.
+		_bare_atoms="$(awk 'NF == 1 && !/^[[:space:]]*#/ { print $1 }' "${tmp_file}")"
 		if [[ -n "${_bare_atoms}" ]]; then
 			while IFS= read -r _atom; do
 				[[ -z "${_atom}" ]] && continue
@@ -1978,6 +1980,11 @@ sort_uniq_mask_use(){
 			# wins per base, output in last-occurrence order (matches
 			# legacy sort_passed_uses behaviour) with each flag's
 			# header emitted just above the flag.
+			#
+			# Ordering uses a global token counter (++tok_idx) so each
+			# token in the input has a unique monotonically-increasing
+			# index — no float-precision games and no collisions when
+			# a base is re-encountered.
 			awk '
 				/^[[:space:]]*$|^[[:space:]]*#/ {
 					pending_header = pending_header $0 "\n"
@@ -1989,6 +1996,7 @@ sort_uniq_mask_use(){
 					for (k = 1; k <= nf; k++) {
 						tok = tokens[k]
 						if (tok == "") continue
+						++tok_idx
 						base = tok
 						sub(/^-/, "", base)
 						# First token of the line picks up the pending
@@ -1997,19 +2005,18 @@ sort_uniq_mask_use(){
 						if (!(base in seen)) {
 							seen[base] = 1
 							headers[base] = (k == 1 ? pending_header : "")
-							order[++count] = base
 						} else if (k == 1 && pending_header != "" && headers[base] == "") {
 							headers[base] = pending_header
 						}
 						last_state[base] = tok
-						last_order[base] = count + (k * 0.001)
+						last_order[base] = tok_idx
 					}
 					pending_header = ""
 				}
 				END {
-					# Sort bases by their LAST-occurrence ordering so the
-					# output mirrors sort_passed_uses (last-position
-					# wins).
+					# Sort bases by their LAST-occurrence token index
+					# (ascending = first-seen first in the result,
+					# matching legacy sort_passed_uses).
 					nb = 0
 					for (base in last_order) bases[++nb] = base
 					for (i = 2; i <= nb; i++) {

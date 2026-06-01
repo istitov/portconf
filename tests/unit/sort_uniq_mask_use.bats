@@ -101,6 +101,19 @@ write_use_mask() {
 	assert_output "$(printf 'foo\n# trailing note about the file')"
 }
 
+@test "sort_uniq_mask_use: re-asserted flag moves to last-occurrence position" {
+	# Regression for the last_order ordering: input "foo bar -baz foo"
+	# should resolve in sort_passed_uses to "bar -baz foo" — foo moves
+	# from position 1 to position 4 because its LAST occurrence is at
+	# position 4, after bar (pos 2) and -baz (pos 3).  A naive
+	# per-base-first-seen ordering would put foo first; this test pins
+	# the legacy behaviour.
+	write_use_mask "foo bar" "-baz" "foo"
+	sort_uniq_mask_use
+	run cat "${TEST_PORT_ETC}/profile/use.mask"
+	assert_output "$(printf 'bar\n-baz\nfoo')"
+}
+
 # --- use.stable.mask ---
 
 @test "sort_uniq_mask_use: processes use.stable.mask too" {
