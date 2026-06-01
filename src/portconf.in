@@ -851,70 +851,145 @@ stupid_keywords(){
 		done < "${1}"
 	done
 }
-# sort_keys: for each atom in $file, sort + dedupe its keyword list (last-state-wins); fills in ~$ARCH if empty.
+# sort_keys: for each atom in $file, sort + dedupe its keyword list (last-state-wins); fill empty to ~$ARCH; preserve header + inline comments.
 sort_keys(){
-	atom_opts=""
 	tmp_file="$(_mktemp)"
 	striped="$(_mktemp)"
-	PACKAGES="$(awk '{print $1}' "${file}" | grep -v '^#' | uniq || true)"
-	for atom in ${PACKAGES};do
-		comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-		# Single-shot append (was a one-iteration `for` loop — see sort_uses
-		# above for the same SC2066 fix).
-		atom_opts+="$(grep "^${atom//\*/\\*}[[:space:]]" "${file}" | sed -e "s|${atom//\*/\\*} ||" -e "s|#.*${comment}||" | tr "[:space:]" $'\n' | uniq | tr $'\n' " " || true)"
-		keys="$(sort_passed_uses "${atom_opts}")"
-		keys="$(sed -e "s|^- | |g" -e "s| -- ||g" -e "s| - | |g" <<< "${keys}")"
-		keys="${keys:-"~${ARCH}"}"
-		if [[ -n "${comment}" ]];then
-			echo "${atom} ${keys} #${comment}" >> "${tmp_file}"
-		else
-			echo "${atom} ${keys}" >> "${tmp_file}"
-		fi
-		unset atom option options keys comment
-		atom_opts=""
-	done
-	cp "${tmp_file}" "${striped}" 2>/dev/null
 
-	while read atom opt;do
-		# Same escaping reasoning as sort_uses above — atoms can carry
-		# sed metacharacters in their version / USE-dep / wildcard parts.
-		local _ap _ar
-		_ap="$(_sed_escape_pat "${atom}")"
-		_ar="$(_sed_escape_rep "${atom}")"
-		[[ -z "${opt}" ]] && sed -e "s|^${_ap}[ \t]$|${_ar} ~${ARCH}|;s|^${_ap}$|${_ar} ~${ARCH}|" -i "${striped}" 2>/dev/null
-		unset atom opt _ap _ar
-	done < "${tmp_file}"
+	# Same gawk approach as sort_uses, two differences: (a) keyword
+	# bases strip ~ as well as - (e.g. amd64 / -amd64 / ~amd64 share
+	# base "amd64"); (b) atoms whose keyword list resolves to empty
+	# default to ~$ARCH (matches the legacy `${keys:-"~${ARCH}"}`
+	# fallback); never dropped.  Header blocks travel with their atom
+	# on sort; trailing comments emit verbatim at EOF.
+	awk -v arch="${ARCH}" '
+		function resolve_keys(tokens,    a, n, i, j, base, last_state, ordering, bases, nb, tmp, out) {
+			delete last_state
+			delete ordering
+			n = split(tokens, a, /[[:space:]]+/)
+			for (i = 1; i <= n; i++) {
+				if (a[i] == "") continue
+				base = a[i]
+				sub(/^[~-]/, "", base)
+				last_state[base] = a[i]
+				ordering[base] = i
+			}
+			nb = 0
+			for (base in ordering) bases[++nb] = base
+			for (i = 2; i <= nb; i++) {
+				tmp = bases[i]
+				for (j = i; j > 1 && ordering[bases[j-1]] > ordering[tmp]; j--)
+					bases[j] = bases[j-1]
+				bases[j] = tmp
+			}
+			out = ""
+			for (i = 1; i <= nb; i++)
+				out = (out == "" ? last_state[bases[i]] : out " " last_state[bases[i]])
+			return out
+		}
 
-	sed -e 's/[ \t]*$//' -e '/^$/d' -e 's|  | |g' -e "s| - | |g" -i "${striped}" 2>/dev/null
-	sort -u "${striped}" -o "${striped}" 2>/dev/null
+		/^[[:space:]]*$|^[[:space:]]*#/ {
+			pending_header = pending_header $0 "\n"
+			next
+		}
+
+		{
+			atom = $1
+			rest = substr($0, length($1) + 1)
+			sub(/^[[:space:]]+/, "", rest)
+			inline_comment = ""
+			if (match(rest, /[[:space:]]+#/) > 0) {
+				inline_comment = substr(rest, RSTART + RLENGTH - 1)
+				rest = substr(rest, 1, RSTART - 1)
+			}
+			if (!(atom in atoms)) {
+				atoms[atom] = rest
+				inline_comments[atom] = inline_comment
+				headers[atom] = pending_header
+			} else {
+				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
+				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
+			}
+			pending_header = ""
+		}
+
+		END {
+			n = asorti(atoms, sorted)
+			for (i = 1; i <= n; i++) {
+				a = sorted[i]
+				resolved = resolve_keys(atoms[a])
+				if (resolved == "") resolved = "~" arch
+				if (inline_comments[a] == "")
+					printf "%s%s %s\n", headers[a], a, resolved
+				else
+					printf "%s%s %s %s\n", headers[a], a, resolved, inline_comments[a]
+			}
+			if (pending_header != "") printf "%s", pending_header
+		}
+	' "${file}" > "${striped}"
+
 	cp "${striped}" "${tmp_file}"
 	stupid_keywords "${tmp_file}" "${striped}"
 	rm "${tmp_file}" 2>/dev/null
 	diff_ask "${file}" "${striped}"
 	eend $? 2>/dev/null
 }
-# sort_keywords: keep only the most-recent keyword spec per atom.
+# sort_keywords: keep only the most-recent single keyword per atom (last token wins); preserve header + inline comments.
 sort_keywords(){
 	keys(){
 		tmp_file="$(_mktemp)"
 		striped="$(_mktemp)"
-		atoms="$(awk '{print $1}' "${file}" | grep -v '^#' | sort -u)"
-		while read atom;do
-			comment="$(grep "${atom}[[:space:]].*#" "${file}" | cut -d\# -f2- || true)"
-			keyword="$(grep "${atom}[[:space:]]" "${file}" | sed -e "s|${atom} ||" -e "s|#.*${comment}||" |\
-						tr "[:space:]" $'\n' | sed '/^$/d' | tail -n1 || true)"
-			keyword="${keyword:-"~${ARCH}"}"
-			if [[ -n "${comment}" ]];then
-				echo "${atom} ${keyword} #${comment}" >> "${tmp_file}"
-			else
-				echo "${atom} ${keyword}" >> "${tmp_file}"
-			fi
-		done <<< "${atoms}"
-		sort -u "${tmp_file}" -o "${tmp_file}" 2>/dev/null
-		cp "${tmp_file}" "${striped}"
-		stupid_keywords "${striped}" "${tmp_file}"
-		rm "${striped}"
-		diff_ask "${file}" "${tmp_file}"
+
+		# Same shape as sort_keys but per-atom keyword resolution
+		# differs: keep ONLY the absolute last token (across all
+		# duplicate atom lines), not last-state-per-base.  Empty
+		# default to ~$ARCH.  Inline comment + header carry from
+		# the first occurrence.
+		awk -v arch="${ARCH}" '
+			/^[[:space:]]*$|^[[:space:]]*#/ {
+				pending_header = pending_header $0 "\n"
+				next
+			}
+			{
+				atom = $1
+				rest = substr($0, length($1) + 1)
+				sub(/^[[:space:]]+/, "", rest)
+				inline_comment = ""
+				if (match(rest, /[[:space:]]+#/) > 0) {
+					inline_comment = substr(rest, RSTART + RLENGTH - 1)
+					rest = substr(rest, 1, RSTART - 1)
+				}
+				# Last token only (across all flag tokens on this line).
+				n = split(rest, tokens, /[[:space:]]+/)
+				last = ""
+				for (i = n; i >= 1; i--) {
+					if (tokens[i] != "") { last = tokens[i]; break }
+				}
+				if (!(atom in atoms)) {
+					headers[atom] = pending_header
+					inline_comments[atom] = inline_comment
+				}
+				atoms[atom] = last    # always overwrite — last occurrence wins
+				pending_header = ""
+			}
+			END {
+				n = asorti(atoms, sorted)
+				for (i = 1; i <= n; i++) {
+					a = sorted[i]
+					keyword = (atoms[a] == "" ? "~" arch : atoms[a])
+					if (inline_comments[a] == "")
+						printf "%s%s %s\n", headers[a], a, keyword
+					else
+						printf "%s%s %s %s\n", headers[a], a, keyword, inline_comments[a]
+				}
+				if (pending_header != "") printf "%s", pending_header
+			}
+		' "${file}" > "${striped}"
+
+		cp "${striped}" "${tmp_file}"
+		stupid_keywords "${tmp_file}" "${striped}"
+		rm "${tmp_file}" 2>/dev/null
+		diff_ask "${file}" "${striped}"
 		eend $? 2>/dev/null
 	}
 	file_or_dir "package.keywords package.accept_keywords" "Sorting keywords in" "keys" || true

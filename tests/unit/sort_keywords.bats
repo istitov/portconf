@@ -70,11 +70,20 @@ teardown() {
 
 # --- comment handling ---
 
-@test "sort_keywords: whole-line comment stripped" {
-	printf '%s\n' "# comment" "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
+@test "sort_keywords: header comment preserved with atom" {
+	printf '%s\n' "# pin ~amd64 until upstream cuts a stable" "app-misc/foo ~amd64" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
 	sort_keywords
 	run cat "${TEST_PORT_ETC}/package.accept_keywords"
-	assert_output "app-misc/foo ~amd64"
+	assert_output "$(printf '# pin ~amd64 until upstream cuts a stable\napp-misc/foo ~amd64')"
+}
+
+@test "sort_keywords: trailing comments at EOF preserved" {
+	printf '%s\n' "app-misc/foo ~amd64" "# trailing note" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "$(printf 'app-misc/foo ~amd64\n# trailing note')"
 }
 
 @test "sort_keywords: inline comment preserved" {

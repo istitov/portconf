@@ -77,11 +77,22 @@ teardown() {
 
 # --- comment handling ---
 
-@test "uniq_keywords: whole-line comment stripped" {
-	printf '%s\n' "# comment" "app-misc/foo ~amd64" > "${TEST_PORT_ETC}/package.accept_keywords"
+@test "uniq_keywords: header comment preserved with atom" {
+	printf '%s\n' "# pin ~amd64 until upstream cuts a stable" "app-misc/foo ~amd64" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
 	uniq_keywords
 	run cat "${TEST_PORT_ETC}/package.accept_keywords"
-	assert_output "app-misc/foo ~amd64"
+	assert_output "$(printf '# pin ~amd64 until upstream cuts a stable\napp-misc/foo ~amd64')"
+}
+
+@test "uniq_keywords: header blocks travel with atoms on sort" {
+	printf '%s\n' \
+		"# header for zzz" "zzz-app/last ~amd64" \
+		"# header for aaa" "aaa-app/first ~amd64" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
+	uniq_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "$(printf '# header for aaa\naaa-app/first ~amd64\n# header for zzz\nzzz-app/last ~amd64')"
 }
 
 @test "uniq_keywords: works on package.keywords too" {
