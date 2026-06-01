@@ -17,6 +17,18 @@ else
 	source /usr/lib*/portage/bin/isolated-functions.sh
 fi
 set -euo pipefail
+# sort_uniq_files / sort_uses use gawk's asorti() to keep each atom's
+# header block attached to it across the alphabetical sort.  Probe
+# early — a busybox / mawk / POSIX-only awk would otherwise error
+# mid-mutation with no actionable diagnostic.  /usr/bin/awk is gawk
+# by default on Gentoo; `eselect awk set …` can override.
+if ! awk 'BEGIN { asorti(a, b) }' </dev/null >/dev/null 2>&1; then
+	printf '%s\n' \
+		"error: portconf requires gawk (sort_uniq_files / sort_uses use asorti)" \
+		"       /usr/bin/awk on this host doesn't support it" \
+		"       fix: emerge dev-lang/gawk && eselect awk set gawk" >&2
+	exit 1
+fi
 # functions.sh references EINFO_QUIET without a default; initialize it so
 # eend/einfo calls work under set -u.
 EINFO_QUIET="${EINFO_QUIET:-}"

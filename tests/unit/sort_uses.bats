@@ -137,3 +137,34 @@ write_use() { printf '%s\n' "$@" > "${TEST_PORT_ETC}/package.use"; }
 	run cat "${TEST_PORT_ETC}/package.use"
 	assert_output "app-misc/foo bar # keep this"
 }
+
+@test "sort_uses: header + atom + inline comment combine cleanly" {
+	# All three pieces should survive: the leading header block, the
+	# atom + flag, and the trailing inline comment.
+	write_use "# why this atom needs bar" "app-misc/foo bar # do not disable"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# why this atom needs bar\napp-misc/foo bar # do not disable')"
+}
+
+@test "sort_uses: divider comment between two atoms — attaches to the later one" {
+	# A bare comment between two atoms (no blank-line separator) is
+	# the next atom's header.  After sort, it travels with that atom.
+	write_use "aaa-app/first flag" "# divider" "zzz-app/last flag"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	# zzz-app/last sorts after aaa-app/first, so the divider stays
+	# attached above zzz in the output.
+	assert_output "$(printf 'aaa-app/first flag\n# divider\nzzz-app/last flag')"
+}
+
+@test "sort_uses: 'atom #notext' (no space before #) — round-trips as-is" {
+	# Edge case: # adjacent to a USE-flag-like token with no separating
+	# whitespace.  Inline-comment detection requires whitespace before
+	# the #, so this token is parsed as a flag named '#notext' and
+	# survives verbatim.  Not pretty but stable.
+	write_use "app-misc/foo #notext"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "app-misc/foo #notext"
+}

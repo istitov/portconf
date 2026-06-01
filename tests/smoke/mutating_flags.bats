@@ -165,6 +165,48 @@ _assert_port_etc_unchanged() {
 
 # --- profile-listing already covered by profile.bats; world-state arm ---
 
+@test "smoke: -f preserves header comments end-to-end on directory-layout package.use" {
+	# Regression for the sort_uniq_files + sort_uses comment-deletion
+	# bug (fixed by the gawk-based rewrites).  Pre-fix, both functions
+	# rebuilt the file from atoms only — every header comment vanished.
+	# This test runs the FULL -f chain (which calls both, plus the
+	# rest of the dispatch) against a directory-layout package.use
+	# fragment that contains a header comment block above an atom,
+	# and asserts the header survives.
+	(( UID != 0 )) && skip "needs root for diff_ask mv branch"
+	rm -f "${SMOKE_PORT_ETC}/package.use"
+	mkdir "${SMOKE_PORT_ETC}/package.use"
+	# Fixture: header comment + atom + flag.  sys-apps/grep is on every
+	# Gentoo install (system set) so the atom survives not_found.
+	# 'static' is a long-stable IUSE that won't be flagged invalid.
+	printf '%s\n' \
+		'# Why grep keeps static linking: bug-compat with ancient scripts' \
+		'# that exec /bin/grep before /usr is mounted.  See bug #00000.' \
+		'sys-apps/grep static' \
+		> "${SMOKE_PORT_ETC}/package.use/grep"
+	# PORTCONF_CONF=/dev/null suppresses host /etc/portconf.conf, which
+	# often sets PORTCONF_DEFAULT_OPTS="-rc" — that would auto-trigger
+	# eix_check + eix-update and make the test slow + tied to the host's
+	# eix cache state.
+	run env \
+		PORT_ETC="${SMOKE_PORT_ETC}" \
+		BRDIR="${SMOKE_BRDIR}" \
+		PKGDB="${SMOKE_PKGDB}" \
+		DEP_PATH="${SMOKE_DEP}" \
+		PORTCONF_CONF=/dev/null \
+		"${PORTCONF_BIN}" -f -y <<< $'No\n'
+	[ "$status" -eq 0 ]
+	# Both comment lines must survive the full dispatch chain.
+	local content
+	content="$(cat "${SMOKE_PORT_ETC}/package.use/grep")"
+	[[ "${content}" == *'Why grep keeps static linking'* ]] || \
+		{ echo "missing first header line; got:" >&2; cat "${SMOKE_PORT_ETC}/package.use/grep" >&2; false; }
+	[[ "${content}" == *'See bug #00000'* ]] || \
+		{ echo "missing second header line; got:" >&2; cat "${SMOKE_PORT_ETC}/package.use/grep" >&2; false; }
+	[[ "${content}" == *'sys-apps/grep static'* ]] || \
+		{ echo "atom missing; got:" >&2; cat "${SMOKE_PORT_ETC}/package.use/grep" >&2; false; }
+}
+
 @test "smoke: interactive Yes mutates when package.use is a directory" {
 	# Regression for the file_or_dir directory-branch stdin-redirect bug.
 	# When package.use is a directory (the modern Gentoo layout), file_or_dir
