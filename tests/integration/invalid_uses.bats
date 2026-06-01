@@ -81,3 +81,29 @@ teardown() {
 	run grep 'static' "${PORT_ETC}/package.use"
 	assert_failure
 }
+
+@test "invalid_uses: agrep -B fallback is not invoked (edit-distance bound)" {
+	# Regression for the agrep silent-substitution misfeature: the
+	# legacy `agrep -B` (best-match-regardless-of-distance) would
+	# rewrite a typoed flag to whatever IUSE token sorted first under
+	# tied Levenshtein, even at edit-distance 10+.  The loop now caps
+	# at -1/-2/-3; -B is unreachable.  This stub returns a "match"
+	# only when -B is invoked — if it is, the flag would be silently
+	# rewritten to 'should_not_be_substituted', which the assertion
+	# below catches.
+	agrep() {
+		case "$1" in
+			-B) printf 'should_not_be_substituted\n' ;;
+			*) return 1 ;;
+		esac
+	}
+	printf 'sys-apps/grep static not_a_real_use_flag_xyz\n' \
+		> "${PORT_ETC}/package.use"
+	invalid_uses
+	# Flag must be removed (not silently substituted).
+	run grep 'not_a_real_use_flag_xyz' "${PORT_ETC}/package.use"
+	assert_failure
+	# And the would-be -B substitute must NOT appear.
+	run grep 'should_not_be_substituted' "${PORT_ETC}/package.use"
+	assert_failure
+}

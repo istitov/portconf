@@ -1308,7 +1308,17 @@ invalid_uses(){
 			USES="$(sed -e 's|^-||g' <<< "${LOCAL}")"
 			for use in ${USES};do
 				if ! grep -q "^${use}$" <<< "${ALL_USE}" && [[ "${use}" != "*" ]];then
-					for agrep_opt in 1 2 3 B;do
+					# Edit-distance-bounded fuzzy match for typo'd USE
+					# flags.  `-1`, `-2`, `-3` enforce a hard cap on
+					# the Levenshtein distance (1, 2, 3).  The legacy
+					# `-B` (best-match-regardless-of-distance) is
+					# explicitly dropped: it would silently rewrite
+					# `qemu jit` → `qemu accessibility` and similar
+					# nonsense when no flag was actually similar
+					# (jit ↔ accessibility = 10 edits).  Anything
+					# beyond 3 edits falls through to incorrect_use
+					# and gets removed as truly invalid.
+					for agrep_opt in 1 2 3;do
 						for use_opt in "${use}" "^${use}" "${use}$" "^${use}$";do
 							similar_use="$(agrep -${agrep_opt} "${use_opt}" 2>/dev/null <<< "${ALL_USE}" || true)"
 							[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
