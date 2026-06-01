@@ -82,6 +82,48 @@ teardown() {
 	assert_failure
 }
 
+@test "invalid_uses: bare-atom drop also removes the orphaned header block" {
+	# Regression: when invalid_uses strips all USE flags from an
+	# atom (because they're invalid or already global), the line
+	# collapses to just "atom" and gets dropped.  Pre-fix, the
+	# header comments above the atom stayed orphaned in the file.
+	# Now they go too.
+	printf '# why we wanted that invalid flag\n# (whole story)\nsys-apps/grep not_a_real_use_flag_xyz\n' \
+		> "${PORT_ETC}/package.use"
+	invalid_uses
+	run cat "${PORT_ETC}/package.use"
+	# Both header lines AND the atom should be gone.
+	[[ "${output}" != *'why we wanted that invalid flag'* ]] \
+		|| { echo "orphan header line 1 still present: $output" >&2; false; }
+	[[ "${output}" != *'(whole story)'* ]] \
+		|| { echo "orphan header line 2 still present: $output" >&2; false; }
+	[[ "${output}" != *'sys-apps/grep'* ]] \
+		|| { echo "atom still present: $output" >&2; false; }
+}
+
+@test "invalid_uses: bare-atom drop leaves surrounding atoms + their headers intact" {
+	printf '%s\n' \
+		'# header for valid_atom' \
+		'sys-apps/grep static' \
+		'' \
+		'# header for the doomed atom' \
+		'sys-apps/grep not_a_real_use_flag_xyz' \
+		'' \
+		'# header for second valid atom' \
+		'sys-libs/ncurses minimal' \
+		> "${PORT_ETC}/package.use"
+	invalid_uses
+	run cat "${PORT_ETC}/package.use"
+	# Both surviving atoms must keep their headers.
+	[[ "${output}" == *'# header for valid_atom'* ]] \
+		|| { echo "valid header missing: $output" >&2; false; }
+	[[ "${output}" == *'# header for second valid atom'* ]] \
+		|| { echo "second valid header missing: $output" >&2; false; }
+	# Doomed atom's header is gone.
+	[[ "${output}" != *'header for the doomed atom'* ]] \
+		|| { echo "doomed header should be gone: $output" >&2; false; }
+}
+
 @test "invalid_uses: agrep -B fallback is not invoked (edit-distance bound)" {
 	# Regression for the agrep silent-substitution misfeature: the
 	# legacy `agrep -B` (best-match-regardless-of-distance) would

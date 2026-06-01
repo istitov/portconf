@@ -1308,23 +1308,20 @@ invalid_uses(){
 			USES="$(sed -e 's|^-||g' <<< "${LOCAL}")"
 			for use in ${USES};do
 				if ! grep -q "^${use}$" <<< "${ALL_USE}" && [[ "${use}" != "*" ]];then
-					# Edit-distance-bounded fuzzy match for typo'd USE
-					# flags.  `-1`, `-2`, `-3` enforce a hard cap on
-					# the Levenshtein distance (1, 2, 3).  The legacy
-					# `-B` (best-match-regardless-of-distance) is
-					# explicitly dropped: it would silently rewrite
-					# `qemu jit` → `qemu accessibility` and similar
-					# nonsense when no flag was actually similar
-					# (jit ↔ accessibility = 10 edits).  Anything
-					# beyond 3 edits falls through to incorrect_use
-					# and gets removed as truly invalid.
+					# Edit-distance-bounded full-line fuzzy match for
+					# typo'd USE flags.  `^${use}$` anchors the pattern
+					# to the full line so agrep can't match against a
+					# substring (a short flag like `jit` would otherwise
+					# match `accessibility` at -1 via the embedded `ity`
+					# substring + 1 substitution).  Then `-1`, `-2`, `-3`
+					# cap the Levenshtein distance; `-B` (best-match-
+					# regardless) is explicitly not in the chain.
+					# Anything beyond 3 edits falls through to
+					# incorrect_use and gets removed as truly invalid.
 					for agrep_opt in 1 2 3;do
-						for use_opt in "${use}" "^${use}" "${use}$" "^${use}$";do
-							similar_use="$(agrep -${agrep_opt} "${use_opt}" 2>/dev/null <<< "${ALL_USE}" || true)"
-							[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
-						done
+						similar_use="$(agrep -${agrep_opt} "^${use}$" 2>/dev/null <<< "${ALL_USE}" || true)"
 						[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
-						[[ -z "${similar_use}" ]] || (( $(wc -l <<< "${similar_use}") > 1 )) && similar_use=""
+						similar_use=""
 					done
 					if [[ -z "${similar_use}" ]];then
 						grep -q " ${use}\>" <<< "${incorrect_use}" || incorrect_use="${incorrect_use} ${use}"
@@ -1365,20 +1362,33 @@ invalid_uses(){
 			unset ALL_USE LOCAL USES use
 			incorrect_use="" global_use=""
 		done <<< "$([[ -n "${atoms}" ]] && printf '%b\n' "${atoms}")"
-		while read atom opt;do
-			if [[ -n "${atom}" ]] && [[ -z "${opt}" ]];then
-				printf '%b\n' "Removing atom: ${green}${atom}${restore}"
-				sed -e "s|^${atom} *$||" -e '/^$/d' -i "${tmp_file}" 2>/dev/null
-				eend $? 2>/dev/null
-			fi
-		done <<< "$([[ -n "${IGNORE}" ]] && grep -v "${IGNORE}" < "${file}" || cat "${file}")"
-		while read atom opt;do
-			if [[ -n "${atom}" ]] && [[ -z "${opt}" ]];then
-				printf '%b\n' "Removing atom: ${green}${atom}${restore}"
-				sed -e "s|^${atom} *$||" -e '/^$/d' -i "${tmp_file}" 2>/dev/null
-				eend $? 2>/dev/null
-			fi
-		done <<< "$([[ -n "${IGNORE}" ]] && grep -v "${IGNORE}" < "${tmp_file}" || cat "${tmp_file}")"
+
+		# Bare-atom cleanup.  After prepare() strips invalid/global USE
+		# flags, some lines collapse to "${atom}" alone (no flags).
+		# Drop each such line AND its preceding header block (the
+		# consecutive comment + blank lines immediately above it),
+		# otherwise the explanatory comments orphan: their atom is
+		# gone but their annotation stays.  Single awk pass over the
+		# post-strip tmp_file replaces the previous two sed-driven
+		# loops (one over $file, one over $tmp_file) — checking the
+		# tmp_file alone catches both the user-written-bare and the
+		# prepare-made-bare cases.
+		_bare_atoms="$(awk 'NF == 1 { print $1 }' "${tmp_file}")"
+		if [[ -n "${_bare_atoms}" ]]; then
+			while IFS= read -r _atom; do
+				[[ -z "${_atom}" ]] && continue
+				printf '%b\n' "Removing atom: ${green}${_atom}${restore}"
+				eend 0 2>/dev/null
+			done <<< "${_bare_atoms}"
+			awk '
+				/^[[:space:]]*$|^[[:space:]]*#/ { pending = pending $0 "\n"; next }
+				NF == 1 { pending = ""; next }
+				{ printf "%s%s\n", pending, $0; pending = "" }
+				END { if (pending != "") printf "%s", pending }
+			' "${tmp_file}" > "${tmp_file}.new"
+			mv "${tmp_file}.new" "${tmp_file}"
+		fi
+		unset _bare_atoms _atom
 		eend $? 2>/dev/null
 		unset FORMAT USEONLY
 	}
