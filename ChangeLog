@@ -1,3 +1,90 @@
+2026-06-01  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.2 — "Comment Section"
+
+	Patch release driven by a pollution-test follow-up on 2.0.1.
+	Real /etc/portage exercised against a synthetic fixture surfaced
+	four user-visible behaviours that worked-by-accident in 2.0.1.
+
+	* sort_uses (in -s/-us/-uf/-f) destroyed every header comment
+	  above each atom — the same comment-loss class as sort_uniq_files
+	  (both fixed here; 2.0.1 had only fixed sort_uniq_files's separate
+	  prompt-dropping bug).
+	* sort_keys + sort_keywords (in -s/-ku/-ko/-f) destroyed the same
+	  class of comments in package.keywords / package.accept_keywords.
+	* sort_uniq_mask_use (in -s/-sup/-uf/-f) destroyed comments in
+	  profile/use.mask / use.stable.mask.
+	* invalid_uses (in -ui/-uf/-f) silently rewrote typos to absurd
+	  matches: `qemu jit` got substituted with `qemu accessibility`
+	  because agrep's unanchored fuzzy search matched the embedded
+	  `ity` substring inside accessibility at edit distance 1.  And
+	  when invalid_uses stripped all USE flags from an atom, the
+	  comment block above the (now bare) atom was left stranded.
+
+	Source-side fixes:
+	* src/portconf.in (sort_uses, sort_uniq_files): single gawk pass
+	  groups each atom with the consecutive comment + blank lines
+	  immediately above it ("header block"); blocks travel with
+	  their atom on sort.  Trailing comments emit verbatim at EOF.
+	  Inline comments still survive.  sort_uniq_files keeps bare
+	  atoms (package.mask use case); sort_uses drops them.
+	* src/portconf.in (sort_keys, sort_keywords): same approach for
+	  the keyword pair.  sort_keys does per-base last-state-wins
+	  (~ and - prefix-stripped for base detection); sort_keywords
+	  keeps the absolute last token per atom.  Both default to
+	  ~$ARCH when empty.
+	* src/portconf.in (sort_uniq_mask_use): per-token comment-
+	  preserving rewrite for the flat-list use.mask / use.stable.mask
+	  case.  Each flag carries the consecutive comment + blank
+	  lines above it as its header.  Ordering uses a monotonic
+	  token counter — no float-precision games, no ties when a base
+	  is re-encountered.
+	* src/portconf.in (invalid_uses agrep): the typo-suggestion
+	  fuzzy match now anchors to ^${use}$ (full-line) so a 3-char
+	  typo can't match a 13-char IUSE via substring.  Edit distance
+	  hard-capped at 3; the `-B` (best-match-regardless) fallback is
+	  dropped.  Anything beyond 3 edits falls through to
+	  incorrect_use and gets removed as truly invalid.
+	* src/portconf.in (invalid_uses bare-atom drop): when stripping
+	  flags leaves an atom bare, the line is removed AND its
+	  preceding header block goes too — no more orphaned comments.
+	  Two sed-driven loops collapsed into one awk cleanup pass.
+	  Per-atom "Removing atom: X" messages emit in a pre-loop scan
+	  (anchored to exclude single-token comment lines) so the UI
+	  shape is unchanged.
+	* src/portconf.in (startup): gawk runtime probe.  Both sort_*
+	  rewrites use `asorti()` which is gawk-only; non-gawk awk
+	  installs (busybox, mawk, eselect-overridden) now fail loudly
+	  at script start with an `emerge dev-lang/gawk && eselect awk
+	  set gawk` hint, not mid-mutation with an opaque error.
+	* src/portconf.in (not_found): the first `eix -Ttc` was unguarded
+	  under set -e while its sibling already had `|| true`.  eix's test
+	  mode exits non-zero when it finds entries, so portconf -t/-f/-fr
+	  aborted at not_found whenever there was something to clean.
+	  Guarded it to match the sibling.
+
+	Tests:
+	* tests/unit/sort_uniq_files.bats: 5 new comment-preservation
+	  cases (header travel on sort, multi-line headers, blank-line-
+	  in-header, trailing EOF comments, duplicate-atom header).
+	* tests/unit/sort_uses.bats: 8 new (header travel + multi-line +
+	  trailing + bare-atom-drops-its-header + 3 edge cases:
+	  header+inline combo, divider-between-atoms, `atom #notext`).
+	* tests/unit/sort_keywords.bats, uniq_keywords.bats: header-
+	  preservation + travel + EOF trailing.
+	* tests/unit/sort_uniq_mask_use.bats: header-preservation + EOF
+	  trailing + re-asserted-flag ordering regression.
+	* tests/integration/invalid_uses.bats: 3 new — agrep-B fallback
+	  regression, bare-atom-drop also strips header, surrounding
+	  atoms keep their headers.
+	* tests/smoke/mutating_flags.bats: end-to-end -f -y regression
+	  asserting both header lines of a two-line comment block above
+	  a directory-layout package.use atom survive the full dispatch
+	  chain.
+
+	Build:
+	* configure.ac: bump to 2.0.2.
+
 2026-05-31  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.1 — "Read From Behind"

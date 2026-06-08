@@ -9,8 +9,8 @@ Originally written by [megabaks](https://github.com/megabaks/portconf) (2012–2
 Currently maintained by [istitov](https://github.com/istitov/portconf).
 
 Version 2.0.0 marks the first release of the maintained fork: a thorough
-modernisation of the inherited script with autotools build system, a 281-test
-suite across three tiers (179 unit / 70 integration / 32 smoke),
+modernisation of the inherited script with autotools build system, a 302-test
+suite across three tiers (195 unit / 73 integration / 34 smoke),
 env-overridable system paths for sandboxing, and 15 latent bugs fixed.
 See [`ChangeLog`](ChangeLog) for the full breakdown.
 
