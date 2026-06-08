@@ -1007,7 +1007,7 @@ uniq_keywords(){
 # installed: probe — set $installed to the qlist output if $category/$pn is installed, else "".
 installed(){
 	all_vers=""
-	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}')"
+	installed="$(qlist -ICSec "${category}/${pn}" | awk '{print $2}' || true)"
 	if [[ -n "${installed}" ]];then
 		# Note: installed_vers / installed_min_ver / installed_max_ver /
 		# installed_live_ver were computed here historically but never
@@ -1025,6 +1025,9 @@ installed(){
 		fi
 		[[ "${installed_slots}" == "0" ]] && unset installed_slots
 	fi
+	# Sets $installed for the caller; never let the last [[ ]]'s exit leak
+	# (a false test would abort `installed;` under set -e).
+	return 0
 }
 
 # not_if: remove atoms in $package whose target package is NOT installed (keep installed ones).
@@ -1398,6 +1401,7 @@ invalid_uses(){
 		file="${PORT_ETC}/package.use"
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
+		atoms=""
 		if [[ -n "${IGNORE}" ]];then
 			content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
 			[[ -n "${content}" ]] && atoms="$(qatom ${content})"
@@ -1419,6 +1423,7 @@ invalid_uses(){
 				file="${f}"
 				tmp_file="$(_mktemp)"
 				cp "${file}" "${tmp_file}"
+				atoms=""
 				if [[ -n "${IGNORE}" ]];then
 					content="$(awk '{print $1}' "${file}" | tr -d "<>=~" | sed -e 's|^#.*||g' | grep -v "${IGNORE}" || true)"
 					[[ -n "${content}" ]] && atoms="$(qatom ${content})"
@@ -1460,6 +1465,8 @@ hell_parser(){
 # invalid_uses_make: remove USE flags from make.conf not present in any known IUSE (per `eix --print-all-useflags`).
 invalid_uses_make(){
 	invalid_uses=""
+	# No make.conf → ${makefile} is empty; skip rather than `cp ""` + abort.
+	[[ -n "${makefile}" ]] || return 0
 	# See invalid_uses for the `local -` rationale.
 	local -
 	set -f
@@ -1619,6 +1626,8 @@ not_found(){
 
 # use_makeconf: remove make.conf USE entries already defined by the profile (profile-shadow-in-make.conf cleanup).
 use_makeconf(){
+	# No make.conf → ${makefile} is empty; skip rather than `cp ""` + abort.
+	[[ -n "${makefile}" ]] || return 0
 	printf '%b\n' "${underline}Checking use flags in${restore} ${contrast}${makefile##/etc*/}${restore}"
 	USE="$(printf '%b\n' "${MAKE_USES}" | tr "[:space:]" $'\n' | sort -u | sed -e '/^$/d')"
 
@@ -2552,7 +2561,7 @@ for OPT in ${opts};do
 		# so the compound never returns false — otherwise this becomes the
 		# last command of the case arm, propagates up through the dispatch
 		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--use-make | -um )
 		backup;
 		use_makeconf;;
@@ -2573,7 +2582,7 @@ for OPT in ${opts};do
 		# so the compound never returns false — otherwise this becomes the
 		# last command of the case arm, propagates up through the dispatch
 		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--keyword-one | -ko )
 		backup;
 		sort_keywords;;
@@ -2593,7 +2602,7 @@ for OPT in ${opts};do
 		# so the compound never returns false — otherwise this becomes the
 		# last command of the case arm, propagates up through the dispatch
 		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--stupid-mask | -sm )
 		backup;
 		mask_trash;;
@@ -2614,7 +2623,7 @@ for OPT in ${opts};do
 		# so the compound never returns false — otherwise this becomes the
 		# last command of the case arm, propagates up through the dispatch
 		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--rm-comments | -c )
 		backup;
 		rm_comments;;
@@ -2644,7 +2653,7 @@ for OPT in ${opts};do
 		# so the compound never returns false — otherwise this becomes the
 		# last command of the case arm, propagates up through the dispatch
 		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
 	--files-2-dirs | -f2d )
 		backup;
 		f_to_d;;
