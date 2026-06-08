@@ -242,7 +242,7 @@ makefile=""
 if [[ -n "${makefile}" ]]; then
 	set +u
 	# shellcheck source=/dev/null  # /etc/portage/make.conf, resolved at runtime
-	. "${makefile}" 2>/dev/null
+	. "${makefile}" 2>/dev/null || true
 	set -u
 fi
 MAKE_USES="${USE:-}"
@@ -428,8 +428,8 @@ restore(){
 		# dashes, spaces) are handled safely.  ${5:-} default form is
 		# required under set -u when callers (world_restore) pass only 4 args.
 		[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
-		tar -xf "${1}/${2}_${answer}.tar.bz2" -C "${4}" 2>/dev/null
-		eend $? 2>/dev/null
+		tar -xf "${1}/${2}_${answer}.tar.bz2" -C "${4}" 2>/dev/null \
+			&& eend 0 2>/dev/null || eend $? 2>/dev/null || true
 		break
 	done
 }
@@ -1067,7 +1067,7 @@ not_if(){
 					# names (`gtk2.0`, etc.) and would silently misalign.
 					local _cp
 					_cp="$(_sed_escape_pat "${category}/${pn}")"
-					sed -e "s|.*\<${_cp}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+					sed -e "s|.*\<${_cp}\>.*||" -e '/^$/d' -i "${tmp_package}" 2>/dev/null || true
 					eend $? 2>/dev/null
 					unset _cp
 				fi
@@ -1276,7 +1276,7 @@ invalid_uses(){
 				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
 				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 				strfxd="${category}/${pn} ${usefxd}"
-				sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null
+				sed -e "s|^${category}/${pn}[[:space:]].*${trash#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null || true
 				eend $? 2>/dev/null
 			done <<< "${strings}"
 		}
@@ -1289,7 +1289,7 @@ invalid_uses(){
 				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
 				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
 				strfxd="${category}/${pn} ${usefxd}"
-				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null
+				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null || true
 				eend $? 2>/dev/null
 			done <<< "${strings}"
 		}
@@ -1517,7 +1517,7 @@ not_found(){
 				printf '%b\n' "${red}Incorrect:${restore} ${line}"
 				line="${line//'*'/\*}"
 				_pat="${line//\\/\\\\}"; _pat="${_pat//|/\\|}"; _pat="${_pat//./\\.}"
-				[[ -n "${line}" ]] && sed -e "s|${_pat}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null
+				[[ -n "${line}" ]] && sed -e "s|${_pat}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null || true
 				unset _pat
 				eend $? 2>/dev/null
 			done <<< "${incorrect}"
@@ -2248,8 +2248,8 @@ overlays(){
 
 	######## build repo list from repos.conf (honors PORT_ETC override)
 	portage_overlays="$(
-		{ cat "${PORT_ETC}/repos.conf" 2>/dev/null
-		  cat "${PORT_ETC}/repos.conf"/*.conf 2>/dev/null; } |
+		{ cat "${PORT_ETC}/repos.conf" 2>/dev/null || true
+		  cat "${PORT_ETC}/repos.conf"/*.conf 2>/dev/null || true; } |
 		awk '/^\[/{gsub(/[\[\]]/,""); repo=$0; next}
 		     /^location[[:space:]]*=/{
 		       gsub(/^location[[:space:]]*=[[:space:]]*/,"")
