@@ -302,7 +302,7 @@ eix_check(){
 		printf '%b\n' "${underline}Creating new temporary cache.${restore}"
 		repo_fix
 		eix_cache="$(_mktemp)"
-		chown portage:portage "${eix_cache}" 2>/dev/null
+		chown portage:portage "${eix_cache}" 2>/dev/null || true
 		export EIX_CACHEFILE="${eix_cache}"
 		export OVERLAY_CACHE_METHOD="parse|ebuild*"
 		eix-update
