@@ -1505,7 +1505,7 @@ invalid_uses_make(){
 not_found(){
 	INVALID_FOUNDED=""
 	printf '%b\n' "${underline}Checking invalid entries${restore}..."
-	TRASH="$(LANG=en eix -Ttc 2>/dev/null)"
+	TRASH="$(LANG=en eix -Ttc 2>/dev/null || true)"
 	while IFS= read -r package; do
 		incorrect="$(printf '%b\n' "${TRASH}" | tr $'\n' "%" | sed -e "s|.*${package}:||" -e 's|--.*||' -e 's|No.*||'|\
 		tr "%" $'\n' | sed -e '/^$/d' | grep -v "${IGNORE}" || true)"
