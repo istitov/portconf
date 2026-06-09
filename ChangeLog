@@ -1,3 +1,47 @@
+2026-06-09  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.3 — "Safe Word"
+
+	Robustness patch.  A 2>/dev/null audit plus a throwaway-sandbox
+	shakeout of every flag (solo, combined, and against poisoned
+	fixtures) surfaced a class of aborts under set -euo pipefail: a
+	command whose non-zero exit is hidden by 2>/dev/null, an unbound
+	variable that `|| true` can't catch, or a function whose
+	last-command exit leaks to its bare caller.  All hit edge cases —
+	non-root, degenerate input, multi-flag runs — and none change the
+	normal-path behaviour.
+
+	* eix_check: any non-root eix-dependent run (e.g. `-p -ui`)
+	  aborted right after "Creating new temporary cache." — the
+	  temp-cache `chown portage:portage` fails for non-root and
+	  2>/dev/null hid the message but not the exit.  Only root (CI)
+	  escaped it, so it read as environmental.  Guarded with `|| true`;
+	  non-root smoke 27/34 -> 34/34.
+	* dispatch: multi-flag runs (e.g. `-s -t -uf -ku -sm -sum`)
+	  aborted — the eix_cache cleanup referenced an unset variable once
+	  a prior arm had unset it (set -u).  Now `${eix_cache:-}`.
+	* invalid_uses: `-ui`/`-uf`/`-f` on an empty or comments-only
+	  package.use aborted on an unset `atoms`.  Reset per file (file
+	  and directory layouts).
+	* invalid_uses_make + use_makeconf: `-ui`/`-um`/`-uf`/`-f` with no
+	  make.conf ran `cp ""` and aborted.  Both return early when
+	  make.conf is absent.
+	* not_if / installed: `-ft` aborted twice — a not-installed atom
+	  failed the qlist pipeline under pipefail, and the function's
+	  trailing test leaked a false exit to its bare `installed;`
+	  caller.  `|| true` on the pipeline plus an explicit `return 0`.
+	* restore / startup / overlays / mask_trash / invalid_uses /
+	  not_found: the remaining 2>/dev/null sites (tar extract,
+	  make.conf source, repos.conf cats, four `sed -i`) guarded so a
+	  non-zero exit lets `eend` report the status instead of aborting.
+
+	Build:
+	* configure.ac: bump to 2.0.3.
+	* man/portconf.1: refresh .TH to 2.0.3 (was stale at 2.0.0 — never
+	  bumped for 2.0.1/2.0.2).
+	* .gitignore: stop tracking generated packaging/Makefile{,.in},
+	  matching src/, man/, completion/.
+
 2026-06-01  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.2 — "Comment Section"
