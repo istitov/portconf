@@ -1,5 +1,68 @@
 2026-06-09  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
+	2.0.4 — "Groundhog Day"
+
+	Idempotence patch.  A flag-by-flag shakeout against a COPY of a real
+	/etc/portage — apply, re-apply, compare — caught two ways a mutating
+	run could silently misbehave: one that changed nothing when it should
+	have, and one that re-changed the file on every run.  Both looked like
+	success.  A new property-invariant test tier now enforces, for the
+	mutating flags, that a second run is a no-op and that no rewrite
+	duplicates a flag or drops an atom.
+
+	* diff_ask (every applying flag): the interactive "Apply changes?"
+	  step discarded the pending change on EOF — non-interactive stdin (a
+	  pipe, a script, a wrapper) fell out of the read loop and rm'd the
+	  temp file with a cheerful "[ ok ]" and no apply.  This was the
+	  "portconf -uf changes nothing" report.  EOF now prints "No answer
+	  read ... re-run with -y" and returns 1.  Separately the "Yes" branch
+	  applied only as root ("go away" + exit for anyone else) while -y did
+	  an unchecked mv with no UID check; both paths now simply attempt the
+	  write and, on failure, report "Could not write <file> (need root?)"
+	  — applying on any writable tree, diagnosing the root-owned
+	  /etc/portage case clearly.
+	* invalid_uses (-ui/-uf/-f): the agrep "did you mean" correction
+	  rewrote each invalid USE flag to a similar valid one and wrote it in.
+	  On a real config it mis-mapped genuinely-removed flags to unrelated
+	  valid ones and, when the target was already present, duplicated it
+	  (mesa gles1/gles2 -> "test ... test"; mpd pipe -> "zip zip"; ffmpeg
+	  libdrm -> "libaom ... libaom") — corrupting package.use and making
+	  -ui/-uf non-idempotent.  The eix lookup was right (those flags really
+	  aren't in current IUSE); only the correction was wrong.  -ui REMOVES
+	  invalid flags per the man page, so the agrep loop and prepare_similar()
+	  are gone — an invalid flag is simply removed.
+	* backup (every mutating flag): etc_update lacked a `:-0` default, so
+	  on an empty PORT_ETC timestamp emitted nothing, the `(( ... > ... ))`
+	  staleness test raised an arithmetic syntax error, fell through to
+	  "already up-to-date", and silently skipped the backup.  Defaulted to
+	  0, mirroring portconf_update.
+	* current_profile (-cpu): an unguarded readlink on a missing
+	  make.profile symlink aborted under set -e + pipefail (unconfigured or
+	  sandboxed tree).  Detect the missing symlink up front and print "No
+	  active profile" with exit 0.
+
+	Tests:
+	* New tests/property/ tier + `make check-properties`: drives the built
+	  binary over synthetic, anonymous fixtures and asserts oracle-free
+	  invariants — idempotence, no-duplicate-flag, inventory-preservation —
+	  for -us/-s/-ku/-ko/-c/-ac and the -ui regression end-to-end.  This is
+	  the class the unit/integration suites missed: they stub agrep to a
+	  no-op and encode a fixed expected output.  Wired into CI after the
+	  smoke tier.  Real-config verification lives in the gitignored
+	  scripts/verify-local.sh — same invariants, data never committed.
+	* tests/unit/diff_ask.bats: writable-applies / unwritable-reports /
+	  EOF-fails-loudly replace the UID-gated cases.
+	* tests/unit/backup.bats + tests/unit/profile.bats: empty-PORT_ETC and
+	  missing-symlink regressions.
+	* tests/integration/invalid_uses.bats: a bounded agrep "match" must not
+	  be applied.
+
+	Build:
+	* configure.ac: bump to 2.0.4.
+	* man/portconf.1: refresh .TH to 2.0.4.
+
+2026-06-09  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
 	2.0.3 — "Safe Word"
 
 	Robustness patch.  A 2>/dev/null audit plus a throwaway-sandbox
