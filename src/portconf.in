@@ -507,15 +507,18 @@ diff_ask(){
 			while read -u "${_ans_fd}" x;do
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
-						if [[ "${UID}" == "0" ]];then
-							mv "${2}" "${1}" 2>/dev/null
-							chmod 0644 "${1}"
-						else
-							printf '%b\n' "you are ${red}!root${restore} ---> go away!"
-							exit 1
+						# Apply if the target is writable; report clearly if
+						# not.  The old code refused every non-root user here
+						# ("go away" + exit 1) while the -y path did an
+						# unchecked mv -- the two now agree by just trying it.
+						if mv "${2}" "${1}" 2>/dev/null;then
+							chmod 0644 "${1}" 2>/dev/null
+							unset full_diff
+							return 0
 						fi
-						unset full_diff
-						return 0;;
+						printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
+						rm "${2}" 2>/dev/null
+						return 1;;
 					No | NO | no | N | n )
 						unset full_diff
 						rm "${2}" 2>/dev/null
@@ -524,11 +527,21 @@ diff_ask(){
 						continue;;
 				esac
 			done
+			# read returned non-zero = EOF: stdin was not an interactive
+			# terminal and no answer was given.  Do NOT silently discard the
+			# pending change (the old behaviour looked like a clean no-op).
+			printf '%b\n' "\n${red}No answer read${restore} (stdin not an interactive terminal); nothing applied. Re-run with ${green}-y${restore} to apply non-interactively."
+			rm "${2}" 2>/dev/null
+			return 1
 		elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
-			mv "${2}" "${1}" 2>/dev/null
-			chmod 0644 "${1}"
-			unset full_diff
-			return 0
+			if mv "${2}" "${1}" 2>/dev/null;then
+				chmod 0644 "${1}" 2>/dev/null
+				unset full_diff
+				return 0
+			fi
+			printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
+			rm "${2}" 2>/dev/null
+			return 1
 		elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
 			unset full_diff
 			rm "${2}" 2>/dev/null

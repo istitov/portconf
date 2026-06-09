@@ -9,9 +9,11 @@
 #
 # When the files are identical diff_ask is a no-op (removes TMPFILE).
 #
-# NOTE on the interactive Apply branch: it's gated on `${UID}` == 0.  Non-
-# root callers hit the "you are !root --> go away!" arm and exit 1.  The
-# interactive tests below assert that behaviour rather than mocking UID.
+# NOTE on the interactive Apply branch: a "Yes" just tries to write the target
+# (mv) and prints "Could not write ... (need root?)" + returns 1 if it can't —
+# it no longer refuses non-root unconditionally or exit()s.  An EOF on the
+# prompt (non-interactive stdin) fails loudly + returns 1 rather than silently
+# discarding the pending change.
 
 load 'test_helper'
 
@@ -136,34 +138,45 @@ _write_files() {
 	assert_output 'old'
 }
 
-@test "diff_ask: interactive 'Yes' as non-root — exits 1 with go-away message" {
-	# The Yes case-arm runs `mv` only when UID==0; otherwise prints
-	# "you are !root --> go away!" and exits 1.  This test exercises
-	# the gating branch and so only applies when the running user is
-	# NOT root.  CI on gentoo/stage3:latest runs as root by default →
-	# the gating branch is unreachable → skip.
-	(( UID == 0 )) && skip "running as root; non-root branch unreachable"
-	printf '%s\n' "old" > "${_f1}"
-	printf '%s\n' "new" > "${_f2}"
-	yes=""; PRETEND=""
-	# diff_ask exits via `exit 1` inside the case; capture with run.
-	run diff_ask "${_f1}" "${_f2}" <<< "Yes"
-	[ "$status" -eq 1 ]
-	[[ "${output}" == *'!root'* || "${output}" == *'go away'* ]]
-}
-
-@test "diff_ask: interactive 'Yes' as root — applies change, file replaced" {
-	# Complement to the previous test.  When UID==0 the Yes case-arm
-	# does mv + chmod 0644.  In CI on stage3:latest this is the actual
-	# path that fires.  Skip on non-root hosts so dev runs don't get
-	# a noisy skip.
-	(( UID != 0 )) && skip "not running as root; mv-branch unreachable from this UID"
+@test "diff_ask: interactive 'Yes' on a writable target — applies (any UID)" {
+	# A "Yes" now just tries the write; on a writable target (these mktemp
+	# files are writable by the test user) it applies regardless of UID —
+	# no more unconditional non-root "go away" + exit.
 	printf '%s\n' "old" > "${_f1}"
 	printf '%s\n' "new" > "${_f2}"
 	yes=""; PRETEND=""
 	diff_ask "${_f1}" "${_f2}" <<< "Yes"
 	run cat "${_f1}"
 	assert_output 'new'
+}
+
+@test "diff_ask: 'Yes' on an unwritable target — 'Could not write', returns 1, unchanged" {
+	# When the write fails (mv denied by dir perms), report clearly + return
+	# 1 instead of the old non-root "go away"/exit.  root bypasses directory
+	# permissions, so this path only exercises as non-root.
+	(( UID == 0 )) && skip "running as root; dir perms don't deny mv"
+	local dir; dir="$(mktemp -d)"
+	printf '%s\n' "old" > "${dir}/f"
+	printf '%s\n' "new" > "${_f2}"
+	chmod 0555 "${dir}"
+	yes=""; PRETEND=""
+	run diff_ask "${dir}/f" "${_f2}" <<< "Yes"
+	chmod 0755 "${dir}"; rm -rf "${dir}"
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'Could not write'* ]]
+}
+
+@test "diff_ask: interactive no answer (EOF) — fails loudly, discards, file unchanged" {
+	# Non-interactive stdin (EOF) used to silently drop the change; now it
+	# prints 'No answer read' + returns 1, leaving the target untouched.
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	yes=""; PRETEND=""
+	run diff_ask "${_f1}" "${_f2}" </dev/null
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'No answer read'* ]]
+	run cat "${_f1}"
+	assert_output 'old'
 }
 
 @test "diff_ask: interactive bogus response then 'No' — reprompts and discards" {
