@@ -26,3 +26,9 @@
 *~
 *.swp
 *.swo
+
+# local-only tooling — verify-local.sh runs the property invariants against
+# the maintainer's REAL /etc/portage; kept untracked so private config data
+# can never leak into the repo (the committed property suite uses synthetic
+# fixtures only).
+/scripts/verify-local.sh

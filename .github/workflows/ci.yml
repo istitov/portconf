@@ -133,6 +133,14 @@ jobs:
       - name: bats smoke suite (real Portage tree)
         run: make check-smoke
 
+      # Property tier drives the built binary over synthetic fixtures and
+      # asserts transform invariants — idempotence, no-duplicate-flag,
+      # inventory-preservation — the oracle-free checks that catch the
+      # corruption class (non-idempotent / flag-duplicating rewrites, silent
+      # atom loss) that fixed-output unit/integration tests miss.
+      - name: bats property suite (transform invariants)
+        run: make check-properties
+
       # distcheck (vs plain dist) extracts the tarball into a subdir and
       # runs configure + make + make check + make install + make uninstall
       # against it — catches missing EXTRA_DIST entries and srcdir-vs-builddir

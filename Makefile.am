@@ -48,7 +48,12 @@ EXTRA_DIST = \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats \
 	tests/smoke/mutating_flags.bats \
-	tests/smoke/no_color.bats
+	tests/smoke/no_color.bats \
+	tests/property/test_helper.bash \
+	tests/property/use_sort.bats \
+	tests/property/keywords.bats \
+	tests/property/comments.bats \
+	tests/property/invalid_uses.bats
 
 # Override BATS to point at a non-system bats binary if needed.
 BATS = bats
@@ -99,6 +104,30 @@ check-smoke:
 	done
 	$(BATS) $(srcdir)/tests/smoke/
 
+# 'make check-properties' drives the built src/portconf binary over SYNTHETIC
+# fixtures and asserts transform invariants — idempotence, no-duplicate-flag,
+# inventory-preservation — rather than golden output.  These are the
+# oracle-free checks that catch the corruption class behind the 2.0.4 fixes
+# (non-idempotent / duplicate-flag-producing rewrites, silent atom loss).
+# Requires the built binary and a Gentoo host with eix (portconf reads it at
+# startup); the invalid_uses property additionally needs qatom and self-skips
+# without it.  All fixtures are made-up atoms/flags — never the host's real
+# config (use the local-only scripts/verify-local.sh for that).
+check-properties:
+	@command -v $(BATS) >/dev/null || { \
+	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \
+	  exit 1; \
+	}
+	@test -x src/portconf || { \
+	  echo "error: src/portconf not built; run ./configure && make first" >&2; \
+	  exit 1; \
+	}
+	@command -v eix >/dev/null || { \
+	  echo "error: eix not on PATH (portconf reads it at startup)" >&2; \
+	  exit 1; \
+	}
+	$(BATS) $(srcdir)/tests/property/
+
 # 'make installcheck' runs after 'make install' to verify the installed
 # binary actually works.  Read-only — does not require root.  Honors
 # DESTDIR so staging installs (DESTDIR=/tmp/staging make install) check
@@ -144,4 +173,4 @@ toc:
 	      f && /^# === [A-Za-z]/ {printf "  %4d  %s\n", NR, substr($$0, 7); f=0; next} \
 	      {f=0}' $(srcdir)/src/portconf.in
 
-.PHONY: check-integration check-smoke installcheck-local ebuild toc
+.PHONY: check-integration check-smoke check-properties installcheck-local ebuild toc

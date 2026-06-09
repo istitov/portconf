@@ -39,6 +39,7 @@ requirements:
    make check                 # bats unit suite
    make check-integration     # needs real eix + qatom + agrep
    make check-smoke           # needs a populated Gentoo host
+   make check-properties      # transform-invariant suite (needs eix; qatom for -ui)
    ```
 
    `make check-integration` needs a populated eix cache — run
