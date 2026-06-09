@@ -84,3 +84,14 @@ _fake_backup() {
 	run bash -c "ls '${TEST_BRDIR}' | grep -c 'portage_'"
 	assert_output "2"
 }
+
+@test "backup: empty PORT_ETC — empty etc_update defaults to 0, no arithmetic error" {
+	# make_test_portage gives an empty PORT_ETC. With no files, timestamp emits
+	# nothing, so etc_update must default to 0 (like portconf_update) — otherwise
+	# `(( etc_update > portconf_update ))` raises a bash arithmetic syntax error
+	# and wrongly falls through to "already up-to-date", skipping the backup.
+	run backup
+	assert_success
+	refute_output --partial 'arithmetic syntax'
+	refute_output --regexp 'line [0-9]+:'
+}

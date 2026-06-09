@@ -217,11 +217,19 @@ profile_use(){
 }
 # current_profile: print USE flags for the currently active profile.
 current_profile(){
+	local link=""
 	if [[ -h "/etc/make.profile" ]];then
-		target="$(readlink /etc/make.profile | sed 's|.*/profiles/||')"
-	else
-		target="$(readlink "${PORT_ETC}/make.profile" | sed 's|.*/profiles/||')"
+		link="/etc/make.profile"
+	elif [[ -h "${PORT_ETC}/make.profile" ]];then
+		link="${PORT_ETC}/make.profile"
 	fi
+	# No profile symlink (an unconfigured tree, or a sandboxed PORT_ETC): report
+	# cleanly instead of aborting on a failed readlink under set -e + pipefail.
+	if [[ -z "${link}" ]];then
+		printf '%b\n' "${red}No active profile${restore} (no make.profile symlink)"
+		return 0
+	fi
+	target="$(readlink "${link}" | sed 's|.*/profiles/||')"
 	USEs="$(sort_passed_uses "${PROFILE}")"
 	printf '%b\n' "${green}${target}${restore}: ${USEs}" | fold -s -w "$(_cols)"
 	unset USEs
@@ -367,6 +375,11 @@ backup(){
 	else
 		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*})"
 	fi
+	# Guard the empty case: an empty PORT_ETC makes timestamp emit nothing, so
+	# without this the `(( etc_update > portconf_update ))` below hits an
+	# arithmetic syntax error and falls through to "already up-to-date" — wrongly
+	# skipping the backup. Mirrors the portconf_update default just below.
+	etc_update="${etc_update:-0}"
 	portconf_update="$(timestamp "${BRDIR}"/*)"
 	portconf_update="${portconf_update:-0}"
 	if (( "${etc_update}" > "${portconf_update}" ));then
