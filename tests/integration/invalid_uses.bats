@@ -149,3 +149,21 @@ teardown() {
 	run grep 'should_not_be_substituted' "${PORT_ETC}/package.use"
 	assert_failure
 }
+
+@test "invalid_uses: a bounded agrep match is not applied (correction removed; no dup)" {
+	# Regression: the agrep edit-distance "did you mean" correction was
+	# removed entirely.  On real configs it mis-mapped genuinely-removed
+	# flags to unrelated valid ones (gles1->test, xvmc->llvm, pipe->zip) and,
+	# when the target was already present, duplicated it (test test).  Even
+	# when agrep returns a single match, the invalid flag must just be
+	# REMOVED, leaving the already-present valid flag exactly once.
+	agrep() { printf 'static\n'; }
+	printf 'sys-apps/grep static not_a_real_use_flag_xyz\n' \
+		> "${PORT_ETC}/package.use"
+	invalid_uses
+	run grep 'not_a_real_use_flag_xyz' "${PORT_ETC}/package.use"
+	assert_failure
+	# 'static' must appear exactly once — no correction-induced duplicate.
+	run bash -c "grep -ow static '${PORT_ETC}/package.use' | wc -l"
+	assert_output "1"
+}

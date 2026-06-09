@@ -1310,19 +1310,6 @@ invalid_uses(){
 			done <<< "${strings}"
 		}
 
-		prepare_similar(){
-			while IFS= read -r string;do
-				struse="${string#${category}/${pn}}"
-				struse="$(tr "[:space:]" $'\n' <<< "${struse}")"
-				usefxd="$(sed -e "s|^${use#-}$|${similar_use}|" -e "s|^\-${use#-}$|\-${similar_use}|" -e '/^$/d' <<< "${struse}")"
-				usefxd="$(tr $'\n' " " <<< "${usefxd}")"
-				usefxd="$(sed -e 's| - | |g' -e 's/[ -]*$//' <<< "${usefxd}")"
-				strfxd="${category}/${pn} ${usefxd}"
-				sed -e "s|^${category}/${pn}[[:space:]].*${use#-}.*|$strfxd|" -i "${tmp_file}" 2>/dev/null || true
-				eend $? 2>/dev/null
-			done <<< "${strings}"
-		}
-
 		_tput sc
 		_tput civis
 		while read category pn ver slot;do
@@ -1337,29 +1324,14 @@ invalid_uses(){
 			USES="$(sed -e 's|^-||g' <<< "${LOCAL}")"
 			for use in ${USES};do
 				if ! grep -q "^${use}$" <<< "${ALL_USE}" && [[ "${use}" != "*" ]];then
-					# Edit-distance-bounded full-line fuzzy match for
-					# typo'd USE flags.  `^${use}$` anchors the pattern
-					# to the full line so agrep can't match against a
-					# substring (a short flag like `jit` would otherwise
-					# match `accessibility` at -1 via the embedded `ity`
-					# substring + 1 substitution).  Then `-1`, `-2`, `-3`
-					# cap the Levenshtein distance; `-B` (best-match-
-					# regardless) is explicitly not in the chain.
-					# Anything beyond 3 edits falls through to
-					# incorrect_use and gets removed as truly invalid.
-					for agrep_opt in 1 2 3;do
-						similar_use="$(agrep -${agrep_opt} "^${use}$" 2>/dev/null <<< "${ALL_USE}" || true)"
-						[[ -n "${similar_use}" ]] && (( $(wc -l <<< "${similar_use}") == 1 )) && break
-						similar_use=""
-					done
-					if [[ -z "${similar_use}" ]];then
-						grep -q " ${use}\>" <<< "${incorrect_use}" || incorrect_use="${incorrect_use} ${use}"
-					else
-						strings="$(grep "^${category}/${pn}[[:space:]].*\<${use}\>" ${tmp_file} || true)"
-						printf '%b\n' "${category}/${pn}: ${red}${use} ---> ${green}${similar_use}${restore}"
-						prepare_similar;
-						incorrect_use="${incorrect_use// ${similar_use}/}"
-					fi
+					# Invalid flag (not in the package's IUSE): mark it for
+					# removal.  An earlier agrep edit-distance "did you mean"
+					# correction lived here, but on real configs it mis-mapped
+					# genuinely-removed flags to unrelated valid ones
+					# (gles1->test, xvmc->llvm, pipe->zip, ...) and duplicated
+					# the target, corrupting package.use.  -ui REMOVES invalid
+					# flags per the man page, so that is all we do.
+					grep -q " ${use}\>" <<< "${incorrect_use}" || incorrect_use="${incorrect_use} ${use}"
 				else
 					incorrect_use="${incorrect_use// ${use}/}"
 				fi
