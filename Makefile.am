@@ -20,6 +20,7 @@ EXTRA_DIST = \
 	tests/unit/status_pc.bats \
 	tests/unit/drop_line.bats \
 	tests/unit/prune_var_flags.bats \
+	tests/unit/mktemp_cleanup.bats \
 	tests/unit/file_ops.bats \
 	tests/unit/file_cleanup.bats \
 	tests/unit/sort_uniq_files.bats \

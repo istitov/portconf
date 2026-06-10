@@ -44,17 +44,31 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
 else
 	green=""; red=""; restore=""; contrast=""; underline=""
 fi
-_tmpfiles=()
+# _tmpfile_list records every temp path handed out by _mktemp.  _mktemp is
+# almost always called as `f="$(_mktemp)"` -- a command-substitution subshell --
+# so an array append (_tmpfiles+=) mutated only the subshell's private copy; the
+# parent array stayed empty and the EXIT-trap cleanup removed nothing.  An append
+# to a FILE survives the subshell, so _cleanup reads every path back in the parent.
+_tmpfile_list="$(mktemp 2>/dev/null)" || _tmpfile_list=""
 # _cleanup: remove every temp file registered via _mktemp; runs from the EXIT trap.
-_cleanup() { [[ ${#_tmpfiles[@]} -gt 0 ]] && rm -f "${_tmpfiles[@]}"; :; }
+_cleanup() {
+	[[ -n "${_tmpfile_list}" && -f "${_tmpfile_list}" ]] || return 0
+	local f
+	while IFS= read -r f;do
+		[[ -n "${f}" ]] || continue
+		rm -f "${f}"
+	done < "${_tmpfile_list}"
+	rm -f "${_tmpfile_list}"
+	return 0
+}
 trap _cleanup EXIT
 
 # shellcheck disable=SC2120  # variadic forwarder — most callers don't pass args, but the function still accepts and forwards them when given.
 _mktemp() {
 	local f
 	f="$(mktemp "$@")"
-	_tmpfiles+=("$f")
-	printf '%s\n' "$f"
+	[[ -n "${_tmpfile_list}" ]] && printf '%s\n' "${f}" >> "${_tmpfile_list}"
+	printf '%s\n' "${f}"
 }
 
 # Escape a string for use as the PATTERN in `sed s|pattern|repl|` with '|'
