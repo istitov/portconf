@@ -121,3 +121,16 @@ teardown() {
 	run grep -x 'app-misc/kept' "${PORT_ETC}/package.use"
 	assert_success
 }
+
+@test "not_found: an IGNORE'd atom is preserved on the INVALID path" {
+	# The TRASH path always honored IGNORE; the INVALID + emerge paths now do
+	# too.  An atom matching the user's IGNORE must survive even when eix calls
+	# it invalid.
+	printf 'app-misc/typo\napp-misc/kept\n' > "${PORT_ETC}/package.use"
+	eix() { printf "Invalid atom in %s: 'app-misc/typo'\n" "${PORT_ETC}/package.use"; }
+	emerge() { :; }
+	IGNORE="app-misc/.*"
+	not_found
+	run grep -F 'app-misc/typo' "${PORT_ETC}/package.use"
+	assert_success
+}

@@ -1241,7 +1241,7 @@ package_env_conf(){
 		done < "${file}"
 		USED_ENV="$(tr ' ' $'\n' <<< "${USED_ENV}")"
 		for conf in ${all_confs};do
-			if ! grep -q "^${conf}$" <<< "${USED_ENV}";then
+			if ! grep -qxF "${conf}" <<< "${USED_ENV}";then
 				printf '%b\n' "Unused conf: ${red}${conf}${restore}"
 				remove_ask "${PORT_ETC}/env/${conf}"
 				eend $? 2>/dev/null
@@ -1660,7 +1660,7 @@ not_found(){
 		done
 	)
 
-	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | sort -u || true)"
+	INVALID="$(LANG=en eix -Ttc 2>&1 | grep "Invalid.*\'.*\'" | grep -v '\.\.\.' | grep -v "${IGNORE}" | sort -u || true)"
 
 	while IFS= read -r string; do
 		[[ -z "${string}" ]] && continue
@@ -1695,9 +1695,9 @@ not_found(){
 	##### don't quote it! #####
 	if [[ -n "${INVALID_FOUNDED}" ]];then
 		invalid=$(emerge --version 2>&1 | sed -e '/--- Invalid atom in /!d' -e 's|--- Invalid atom in ||g;s|:||' |\
-			grep -v "${INVALID_FOUNDED}" || true)
+			grep -v "${INVALID_FOUNDED}" | grep -v "${IGNORE}" || true)
 	else
-		invalid=$(emerge --version 2>&1 | sed -e '/--- Invalid atom in /!d' -e 's|--- Invalid atom in ||g;s|:||')
+		invalid=$(emerge --version 2>&1 | sed -e '/--- Invalid atom in /!d' -e 's|--- Invalid atom in ||g;s|:||' | grep -v "${IGNORE}" || true)
 	fi
 	broken_files="$(awk '{print $1}' <<< "${invalid}" | sort -u)"
 	invalid_lines(){
