@@ -74,3 +74,10 @@ load test_helper
 	run timeout 5 "${PORTCONF_BIN}" -rc
 	[ "$status" -eq 0 ]
 }
+
+@test "smoke: an unknown option errors with usage (not silently ignored)" {
+	# PORTCONF_CONF=/dev/null so a host PORTCONF_DEFAULT_OPTS can't interfere.
+	run env PORTCONF_CONF=/dev/null "${PORTCONF_BIN}" --definitely-not-a-real-flag
+	assert_output_contains 'Unknown option'
+	assert_output_contains 'Usage: portconf'
+}

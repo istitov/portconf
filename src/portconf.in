@@ -2800,6 +2800,7 @@ for OPT in ${opts};do
 		overlays;;
 	--version | -V ) echo "portconf ${PACKAGE_VERSION}"; exit 0;;
 	--help | -h | -? | h ) help_pc;;
+	*) printf '%b\n' "${red}Unknown option${restore}: ${OPT}" >&2; help_pc;;
 	esac
 done
 _status_pc
