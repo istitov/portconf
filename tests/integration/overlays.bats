@@ -135,3 +135,32 @@ EOF
 	run overlays <<< $'No\nNo\n'
 	[[ "${output}" != *'Unused repos:'*'DEFAULT'* ]]
 }
+
+# --- removal call: eselect must be forced (-f) ---
+
+@test "overlays: an unused overlay is removed with 'eselect repository remove -f'" {
+	# eselect refuses `local`/`no-sync-uri` overlays without -f, so the
+	# removal call must pass it.  Stub eselect to record its args instead of
+	# touching the real host repos.
+	local fake_loc="${BATS_TEST_TMPDIR}/local_overlay"
+	mkdir -p "${fake_loc}"
+	_declare_overlay "localov" "${fake_loc}"
+	_install_pkg "sys-apps/grep-1.0" "gentoo"
+	local calls="${BATS_TEST_TMPDIR}/eselect.calls"
+	eselect() { printf '%s\n' "$*" >> "${calls}"; return 0; }
+	# "No" to the save-prompt so localov stays UNUSED and reaches removal.
+	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
+	[ -f "${calls}" ]
+	grep -qF 'repository remove -f localov' "${calls}"
+}
+
+@test "overlays: a failed removal suggests the -f command in its hint" {
+	local fake_loc="${BATS_TEST_TMPDIR}/local_overlay2"
+	mkdir -p "${fake_loc}"
+	_declare_overlay "stubborn" "${fake_loc}"
+	_install_pkg "sys-apps/grep-1.0" "gentoo"
+	# Simulate eselect declining the removal (e.g. run as non-root).
+	eselect() { return 1; }
+	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
+	[[ "${output}" == *'eselect repository remove -f stubborn'* ]]
+}

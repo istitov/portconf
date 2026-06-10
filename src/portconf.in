@@ -2447,11 +2447,17 @@ overlays(){
 		fi
 	}
 	ask
+	# -f: eselect refuses to remove `local` (not in its remote registry) and
+	# `no-sync-uri` overlays without it -- which covers most hand-added
+	# overlays.  These are already confirmed UNUSED (no installed packages)
+	# and survived the save-prompt above, so force the removal; -f also
+	# rm -rf's the overlay dir, the same as the no-flag path already does for
+	# the removable remote overlays.
 	for repo in ${UNUSED}; do
-		if eselect repository remove "${repo}" 2>/dev/null; then
+		if eselect repository remove -f "${repo}" 2>/dev/null; then
 			eend 0 2>/dev/null
 		else
-			printf '%b\n' "Could not auto-remove ${red}${repo}${restore}: run: eselect repository remove ${repo}"
+			printf '%b\n' "Could not auto-remove ${red}${repo}${restore}: run: eselect repository remove -f ${repo}"
 			eend 1 2>/dev/null
 		fi
 	done
