@@ -84,21 +84,25 @@ _sed_escape_rep() {
 	printf '%s' "$s"
 }
 
-# _drop_line FILE VALUE: delete every line of FILE that equals VALUE, compared
-# as a trimmed LITERAL string (awk string equality, not a regex).  Replaces the
-# fragile `sed -e "s|^${x}.*||"` / `s|${x}||` removals whose unanchored,
-# over-broad, or unescaped patterns also deleted prefix-sibling or
-# metachar-matching valid entries (removing `foo` nuked `foobar`; a bare
-# `cat/pn` nuked every slot).  String equality can never collateral-match.
+# _drop_line FILE VALUE [field1]: delete lines of FILE matching VALUE as a
+# trimmed LITERAL string (awk string equality, never a regex) — the whole line
+# by default, or the first whitespace field when the 3rd arg is "field1" (drops
+# an atom's entire entry, flags and all).  Replaces the fragile
+# `sed -e "s|^${x}.*||"` / `s|${x}||` removals whose unanchored, over-broad, or
+# unescaped patterns also deleted prefix-sibling or metachar-matching valid
+# entries (removing `foo` nuked `foobar`; a bare `cat/pn` nuked every slot).
+# String equality can never collateral-match.
 _drop_line() {
-	local f="$1" v="$2" tmp
+	local f="$1" v="$2" mode="${3:-line}" tmp
 	tmp="$(_mktemp)"
-	awk -v v="${v}" '
-		BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
-		{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
-		t == v { next }
-		{ print }
-	' "${f}" > "${tmp}"
+	if [[ "${mode}" == "field1" ]]; then
+		awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
+			$1 == v { next } { print }' "${f}" > "${tmp}"
+	else
+		awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
+			{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
+			t == v { next } { print }' "${f}" > "${tmp}"
+	fi
 	mv "${tmp}" "${f}"
 }
 
@@ -1598,10 +1602,7 @@ not_found(){
 			printf '%b\n' "${underline}Removing incorrect from${restore} ${contrast}${package}${restore}:"
 			while IFS= read -r line;do
 				printf '%b\n' "${red}Incorrect:${restore} ${line}"
-				line="${line//'*'/\*}"
-				_pat="${line//\\/\\\\}"; _pat="${_pat//|/\\|}"; _pat="${_pat//./\\.}"
-				[[ -n "${line}" ]] && sed -e "s|${_pat}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}" 2>/dev/null || true
-				unset _pat
+				[[ -n "${line}" ]] && _drop_line "${tmp_package}" "${line}" field1
 				eend $? 2>/dev/null
 			done <<< "${incorrect}"
 			diff_ask "${package}" "${tmp_package}"
@@ -1612,7 +1613,7 @@ not_found(){
 					tmp_file="$(_mktemp)"
 					cp "${file}" "${tmp_file}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
-					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_file}"
+					[[ -n "${line}" ]] && _drop_line "${tmp_file}" "${line}" field1
 					diff_ask "${file}" "${tmp_file}"
 					eend $? 2>/dev/null
 				done < <(grep -RH "${line//'*'/\*}" "${package}"/ | awk -F \: '{print $1}')
@@ -1637,25 +1638,20 @@ not_found(){
 		line="$( awk -F ':' '{print $2}' <<< "${string}")"
 		line="${line//\'/}"
 		printf '%b\n' "${red}Incorrect:${restore} ${line}"
-		line="${line//'*'/\*}"
 		line="${line#[[:space:]]}"
 		INVALID_FOUNDED+="${line}"$'\n'
 
 		if [[ -n "${line}" && -f "${file}" ]];then
 			tmp_file="$(_mktemp)"
 			cp "${file}" "${tmp_file}"
-			# Escape BRE metacharacters and the sed delimiter (|) before
-			# interpolating $line into the substitution pattern.
-			_pat="${line//\\/\\\\}"; _pat="${_pat//|/\\|}"; _pat="${_pat//./\\.}"
-			[[ -n "${line}" ]] && sed -e "s|${_pat}$||" -e 's|[ \t]| |' -e '/^[ \t]$/d' -e '/^$/d' -i "${tmp_file}"
-			unset _pat
+			[[ -n "${line}" ]] && _drop_line "${tmp_file}" "${line}" field1
 			diff_ask "${file}" "${tmp_file}"
 		elif [[ -n "${line}" && -d "${file}" ]];then
 			while IFS= read -r package; do
 					tmp_package="$(_mktemp)"
 					cp "${package}" "${tmp_package}"
 					printf '%b\n' "${red}Incorrect:${restore} ${line}"
-					[[ -n "${line}" ]] && sed -e "s|${line//'*'/\*}||" -e 's/[ \t]*$//' -e '/^$/d' -i "${tmp_package}"
+					[[ -n "${line}" ]] && _drop_line "${tmp_package}" "${line}" field1
 					diff_ask "${package}" "${tmp_package}"
 					eend $? 2>/dev/null
 			done < <(grep -RH "${line//'*'/\*}" "${file}"/ | awk -F \: '{print $1}')
@@ -1682,7 +1678,7 @@ not_found(){
 		set -f
 		tlines="$(grep "^${file} " <<< "${invalid}" | sed "s|${file} ||g" || true)"
 		while IFS= read -r line;do
-			sed -e "s|^$(printf '%s' "${line}").*$||;s|^${line//\*/\\*}.*$||" -e 's|[ \t]| |;/^[ \t]$/d;/^$/d' -i "${tmp_file}"
+			_drop_line "${tmp_file}" "${line}" field1
 		done <<< "${tlines}"
 		diff_ask "${file}" "${tmp_file}"
 	}
@@ -1894,12 +1890,16 @@ mask_trash(){
 	# That works in bash but is non-portable and trips shellcheck SC2104.
 	# Now: set `_trash_hit=1` and let the inner loop's body break out.
 	slot_output(){
+		# Store the slot-qualified atom so the later first-field removal matches
+		# the file's `cat/pn:slot` line exactly (a bare cat/pn would either miss
+		# it or, with the old `^cat/pn.*` sed, nuke every slot sibling).
 		if [[ "${mslot}" != "(null)" ]];then
 			printf '%b\n' "${red}Incorrect${restore}: ${mcategory}/${mpn}:${mslot}"
+			TRASH+="${mfile} ${mcategory}/${mpn}:${mslot}"$'\n'
 		else
 			printf '%b\n' "${red}Incorrect${restore}: ${mcategory}/${mpn}"
+			TRASH+="${mfile} ${mcategory}/${mpn}"$'\n'
 		fi
-		TRASH+="${mfile} ${mcategory}/${mpn}"$'\n'
 		_trash_hit=1
 	}
 	non_slot_output(){
@@ -2004,7 +2004,7 @@ mask_trash(){
 			cp "${target}" "${tmp_file}"
 			incorrect="$(grep ${target} <<< "${TRASH}" | sed -e "s|${target} ||g" || true)"
 			for trash_atom in ${incorrect};do
-				sed -e "s|^${trash_atom}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
+				_drop_line "${tmp_file}" "${trash_atom}" field1
 			done
 			diff_ask "${target}" "${tmp_file}"
 		fi

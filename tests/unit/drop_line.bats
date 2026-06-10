@@ -65,3 +65,20 @@ teardown() {
 	run cat "${_f}"
 	assert_output 'cat/b'
 }
+
+# --- field1 mode: match the first whitespace field (drop the whole entry) ---
+
+@test "_drop_line field1: removes the whole entry matching the first field" {
+	printf '%s\n' 'cat/a flag1 flag2' 'cat/b flag3' > "${_f}"
+	_drop_line "${_f}" 'cat/a' field1
+	run cat "${_f}"
+	assert_output 'cat/b flag3'
+}
+
+@test "_drop_line field1: a first-field match never hits a prefix-sibling atom" {
+	printf '%s\n' 'cat/a flag' 'cat/a-extra flag' 'dev-lang/python:3.11' 'dev-lang/python:3.12' > "${_f}"
+	_drop_line "${_f}" 'cat/a' field1
+	_drop_line "${_f}" 'dev-lang/python:3.11' field1
+	run cat "${_f}"
+	assert_output "$(printf 'cat/a-extra flag\ndev-lang/python:3.12')"
+}

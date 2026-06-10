@@ -95,3 +95,29 @@ teardown() {
 	run grep 'app-misc/kept' "${PORT_ETC}/package.use"
 	assert_success
 }
+
+# --- no-collateral guarantees (the old unanchored sed failed these) ---
+
+@test "not_found: removing an atom keeps a prefix-sibling atom" {
+	# Removing app-misc/gone must NOT touch the distinct app-misc/gone-extra.
+	printf 'app-misc/gone\napp-misc/gone-extra useflag\n' > "${PORT_ETC}/package.use"
+	eix() { printf '%s:\napp-misc/gone\n' "${PORT_ETC}/package.use"; }
+	emerge() { :; }
+	not_found
+	run grep -x 'app-misc/gone' "${PORT_ETC}/package.use"
+	assert_failure
+	run grep -F 'app-misc/gone-extra useflag' "${PORT_ETC}/package.use"
+	assert_success
+}
+
+@test "not_found: removing an atom drops its whole line, not just the atom text" {
+	# A package.use entry with flags must go entirely — no orphaned " flags".
+	printf 'app-misc/gone someflag otherflag\napp-misc/kept\n' > "${PORT_ETC}/package.use"
+	eix() { printf '%s:\napp-misc/gone\n' "${PORT_ETC}/package.use"; }
+	emerge() { :; }
+	not_found
+	run grep -F 'someflag' "${PORT_ETC}/package.use"
+	assert_failure
+	run grep -x 'app-misc/kept' "${PORT_ETC}/package.use"
+	assert_success
+}
