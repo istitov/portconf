@@ -140,3 +140,56 @@ load 'test_helper'
 	assert_success
 	rm -rf "${TEST_ROOT}"
 }
+
+# ---------- restore() safety: never wipe without a verified extract ----------
+
+@test "etc_restore: corrupt tarball leaves PORT_ETC intact (validate before wipe)" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}"
+	printf 'KEEP\n' > "${PORT_ETC}/should_survive"
+	# Not a valid archive — tar -tf must reject it before any wipe happens.
+	printf 'this is not a tarball\n' > "${BRDIR}/portage_24.01.01-12:00.tar.bz2"
+	run etc_restore <<< "1"
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'unreadable or corrupt'* ]]
+	# The live tree must be untouched.
+	run cat "${PORT_ETC}/should_survive"
+	assert_output 'KEEP'
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: out-of-range menu choice does not wipe PORT_ETC" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}"
+	printf 'KEEP\n' > "${PORT_ETC}/should_survive"
+	local staging="${TEST_ROOT}/staging"
+	mkdir -p "${staging}/portage"
+	tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" -C "${staging}" portage
+	# "99" is out of range → select leaves answer empty → must re-prompt, not wipe.
+	run etc_restore <<< "99"
+	[[ "${output}" == *'Invalid choice'* ]]
+	run cat "${PORT_ETC}/should_survive"
+	assert_output 'KEEP'
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: empty backup dir reports cleanly without aborting" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}"
+	run etc_restore <<< "1"
+	[ "$status" -eq 0 ]
+	[[ "${output}" == *'No backups'* ]]
+	rm -rf "${TEST_ROOT}"
+}

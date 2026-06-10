@@ -432,24 +432,45 @@ world_backup(){
 }
 # restore: interactive — pick a backup tarball and extract over the target tree.
 restore(){
-	tarballs="$(ls -1 --color=never "${1}"/*.bz2)"
+	local tarballs src answer
+	# Guard the listing: a glob with no match makes `ls` exit non-zero, which
+	# would abort the whole run under set -e instead of saying "no backups".
+	tarballs="$(ls -1 --color=never "${1}"/*.bz2 2>/dev/null || true)"
+	if [[ -z "${tarballs}" ]];then
+		printf '%b\n' "${red}No backups${restore} found in ${contrast}${1}${restore}"
+		return 0
+	fi
 	tarballs="${tarballs//${1}\/}"
 	tarballs="${tarballs//.tar.bz2/}"
 	tarballs="${tarballs//${2}_/}"
 	PS3="$(printf '%b\n' "${contrast}Choose number:${restore} ")"
 	printf '%b\n' "${contrast}Available backups${restore}:"
 	select answer in ${tarballs};do
+		# An out-of-range / non-numeric choice leaves ${answer} empty; re-prompt
+		# instead of falling through and wiping the target with nothing to put
+		# back.
+		[[ -z "${answer}" ]] && { printf '%b\n' "${red}Invalid choice${restore}"; continue; }
+		src="${1}/${2}_${answer}.tar.bz2"
+		# Validate the archive BEFORE touching the live tree.  The old code
+		# wiped $5 first and swallowed a failed extract, so a corrupt/truncated
+		# tarball left the target EMPTY with no way back.  `tar -t` it first and
+		# bail untouched on failure.
+		if ! tar -tf "${src}" >/dev/null 2>&1;then
+			printf '%b\n' "${red}Backup ${answer} is unreadable or corrupt${restore}; nothing changed"
+			return 1
+		fi
 		printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
-		# $5 (optional) is the dir whose CONTENTS should be wiped before
-		# extracting the chosen tarball (so the restore is authoritative —
-		# leftover files from the current state don't survive).  Use
-		# find -delete rather than `rm -rf ${5}/*` so an empty dir doesn't
-		# pass an empty arglist to rm and weirdly-named entries (leading
-		# dashes, spaces) are handled safely.  ${5:-} default form is
-		# required under set -u when callers (world_restore) pass only 4 args.
+		# $5 (optional) is the dir whose CONTENTS are wiped before extracting
+		# (so the restore is authoritative -- leftover files don't survive).
+		# find -delete handles an empty dir + weird names; ${5:-} is required
+		# under set -u for the 4-arg (world_restore) callers.
 		[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
-		tar -xf "${1}/${2}_${answer}.tar.bz2" -C "${4}" 2>/dev/null \
-			&& eend 0 2>/dev/null || eend $? 2>/dev/null || true
+		if tar -xf "${src}" -C "${4}" 2>/dev/null;then
+			eend 0 2>/dev/null
+		else
+			printf '%b\n' "${red}Extract failed${restore} for ${answer} (target may be incomplete)"
+			eend 1 2>/dev/null
+		fi
 		break
 	done
 }
