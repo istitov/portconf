@@ -313,8 +313,8 @@ repo_fix(){
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
 			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u || true)"
-			portage_categoties="$(cat "${PORTDIR}/profiles/categories")"
-			if [[ -n "$(grep -v "${portage_categoties}" <<< "${local_categories}" || true)" ]];then
+			portage_categoties="$(cat "${PORTDIR}/profiles/categories" 2>/dev/null || true)"
+			if [[ -n "$(grep -vxF -f <(printf '%s\n' "${portage_categoties}") <<< "${local_categories}" || true)" ]];then
 				if [[ ! -f "${path}/profiles/categories" ]];then
 					[[ ! -d "${path}/profiles" ]] && mkdir "${path}/profiles" && tmp_categories+=" ${path}/profiles"
 					printf '%b\n' "Creating temporary 'categories': ${path}"
@@ -342,7 +342,9 @@ eix_check(){
 		chown portage:portage "${eix_cache}" 2>/dev/null || true
 		export EIX_CACHEFILE="${eix_cache}"
 		export OVERLAY_CACHE_METHOD="parse|ebuild*"
-		eix-update
+		# Don't let a failed eix-update abort the run and strand repo_fix's
+		# temp categories in the user's overlay -- clean up, report, exit.
+		eix-update || { rm_repo_fix; eend 1 2>/dev/null; exit 1; }
 	else
 		printf '%b\n' "${green}app-portage/eix${restore} ${red}not installed!${restore}"
 		eend 1 2>/dev/null
@@ -724,7 +726,7 @@ sort_uniq_files(){
 				if (pending_header != "") printf "%s", pending_header
 			}
 		' "${package}" > "${tmp_sort}"
-		diff_ask "${package}" "${tmp_sort}"
+		diff_ask "${package}" "${tmp_sort}" || true
 		eend $? 2>/dev/null
 	done < <(find "${PORT_ETC}/" -type f \! -name '*~' \! -name '*.bak' | grep "/package\." || true)
 }
@@ -2162,7 +2164,7 @@ sort_uniq_mask_use(){
 				}
 			' "${package}" > "${tmp_sort}"
 
-			diff_ask "${package}" "${tmp_sort}"
+			diff_ask "${package}" "${tmp_sort}" || true
 			eend $? 2>/dev/null
 		done < <(find "${PORT_ETC}/profile" -type f \! -name '*~' \! -name '*.bak' \( -name "use.stable.mask" -o -name "use.mask" \))
 	fi
