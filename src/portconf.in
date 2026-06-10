@@ -1760,10 +1760,14 @@ f_to_d(){
 			dir="${PORT_ETC}/${package##*/}"
 			mkdir "${dir}"
 			set -f
-			while read line;do
+			while IFS= read -r line;do
 				atom="$(awk '{print $1}' <<< "${line}")"
 				category="$(awk '{print $1}' <<< "$(qatom "${atom}")")"
-				if [[ "${category}" != "(null)" ]];then
+				# Skip non-atoms: a blank / comment-blanked line gives an empty
+				# atom and qatom reports category "(null)" (legacy) or "<unset>"
+				# (portage-utils 0.97+) — without this guard those lines were
+				# dumped into a junk file literally named "unset".
+				if [[ -n "${atom}" && "${category}" != "(null)" && "${category}" != "<unset>" ]];then
 					category="$(tr -d "<>=~" <<< "${category}" )"
 					[[ "${category}" == "*" ]] && category="all_categories"
 					echo "${line}" >> "${dir}/${category}"

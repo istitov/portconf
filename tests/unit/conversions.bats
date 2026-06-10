@@ -63,6 +63,17 @@ teardown() {
 	assert_output "app-misc/foo bar"
 }
 
+@test "f_to_d: blank and comment lines do not create a junk 'unset' file" {
+	# A blank line (or a comment blanked by the strip pass) yields an empty
+	# atom whose qatom category is "<unset>" on modern portage-utils; it must
+	# be skipped, not written to a file literally named "unset".
+	printf '%s\n' "app-misc/foo bar" "" "# a comment" > "${TEST_PORT_ETC}/package.use"
+	f_to_d
+	[[ ! -e "${TEST_PORT_ETC}/package.use/unset" ]]
+	run cat "${TEST_PORT_ETC}/package.use/app-misc"
+	assert_output "app-misc/foo bar"
+}
+
 @test "f_to_d: skips existing directories" {
 	mkdir -p "${TEST_PORT_ETC}/package.use"
 	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use/app-misc"
