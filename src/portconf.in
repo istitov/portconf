@@ -121,6 +121,13 @@ DEP_PATH="${DEP_PATH:-/var/cache/edb/dep}"
 ARCH="$(eix --print DEFAULT_ARCH)"
 yes=""
 PRETEND=""
+# Mutation tallies for the end-of-run status line (_status_pc, printed after
+# the dispatch loop): _changes_seen marks that a mutating op ran at all,
+# _changes_found counts files with a pending diff, _changes_applied the ones
+# actually written.  diff_ask maintains all three.
+_changes_seen=""
+_changes_found=0
+_changes_applied=0
 eix_cache=""
 IGNORE_CATEGORY=""
 IGNORE_PN=""
@@ -466,8 +473,10 @@ world_restore(){
 # diff_ask: show a diff for each pending change and prompt accept/skip/all.
 diff_ask(){
 	full_diff=""
+	_changes_seen=1
 	my_diff="$(diff "${1}" "${2}" | grep --color=never "[[:digit:]][a-z][[:digit:]]" || true)"
 	if [[ -n "${my_diff}" ]];then
+		_changes_found=$(( _changes_found + 1 ))
 		while read subj;do
 			old_num="$(tr ',' ' ' <<< "${subj%[a-z]*}")"
 			[[ "$(wc -w <<< "${old_num}")" == "2" ]] && old_num="$(seq ${old_num})"
@@ -513,6 +522,7 @@ diff_ask(){
 						# unchecked mv -- the two now agree by just trying it.
 						if mv "${2}" "${1}" 2>/dev/null;then
 							chmod 0644 "${1}" 2>/dev/null
+							_changes_applied=$(( _changes_applied + 1 ))
 							unset full_diff
 							return 0
 						fi
@@ -536,6 +546,7 @@ diff_ask(){
 		elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
 			if mv "${2}" "${1}" 2>/dev/null;then
 				chmod 0644 "${1}" 2>/dev/null
+				_changes_applied=$(( _changes_applied + 1 ))
 				unset full_diff
 				return 0
 			fi
@@ -577,6 +588,34 @@ remove_ask(){
 	elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
 		eend 0 2>/dev/null
 	fi
+}
+# _status_pc: end-of-run status line so a mutating invocation is never silent.
+# Reads the tallies diff_ask kept and speaks only when a mutating op actually
+# ran (_changes_seen).  Purely additive: it runs after the dispatch loop, never
+# gates control flow (so it can't break a prompt or a piped-in answer stream),
+# and is exit-code transparent (captures and re-returns $?).  The abort paths
+# (no answer read / cannot write) print their own specific message before
+# exiting under set -e, so they never reach -- and don't need -- this summary.
+_status_pc(){
+	local _rc=$?
+	[[ -n "${_changes_seen}" ]] || return ${_rc}
+	local pending=$(( _changes_found - _changes_applied ))
+	if [[ -n "${PRETEND}" ]];then
+		if (( _changes_found > 0 ));then
+			printf '%b\n' "${contrast}portconf:${restore} pretend (-p), ${_changes_found} file(s) would change, nothing written"
+		else
+			printf '%b\n' "${contrast}portconf:${restore} no changes needed"
+		fi
+	elif (( _changes_applied > 0 && pending == 0 ));then
+		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s)"
+	elif (( _changes_applied > 0 ));then
+		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending (re-run with -y)"
+	elif (( pending > 0 ));then
+		printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (re-run with -y)"
+	else
+		printf '%b\n' "${contrast}portconf:${restore} no changes needed"
+	fi
+	return ${_rc}
 }
 # ============================================================================
 # === PACKAGE.* FILE OPS
@@ -2672,4 +2711,5 @@ for OPT in ${opts};do
 	--help | -h | -? | h ) help_pc;;
 	esac
 done
+_status_pc
 fi # PORTCONF_NO_MAIN / sourcing guard

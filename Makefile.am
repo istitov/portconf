@@ -17,6 +17,7 @@ EXTRA_DIST = \
 	tests/unit/sort_uses.bats \
 	tests/unit/conversions.bats \
 	tests/unit/diff_ask.bats \
+	tests/unit/status_pc.bats \
 	tests/unit/file_ops.bats \
 	tests/unit/file_cleanup.bats \
 	tests/unit/sort_uniq_files.bats \
@@ -53,6 +54,7 @@ EXTRA_DIST = \
 	tests/property/use_sort.bats \
 	tests/property/keywords.bats \
 	tests/property/comments.bats \
+	tests/property/status_line.bats \
 	tests/property/invalid_uses.bats
 
 # Override BATS to point at a non-system bats binary if needed.
