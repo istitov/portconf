@@ -2607,8 +2607,8 @@ overlays(){
 }
 # ============================================================================
 # === HELP TEXT
-# === help_pc.  The --help output; the eix_dep_keys flag table in DISPATCH
-# === below must stay in sync with this text.
+# === help_pc.  The --help output; the canonical flag inventory.  The DISPATCH
+# === case below and the _needs_eix flag set must stay in sync with this text.
 # ============================================================================
 
 # help_pc: the --help output; canonical flag inventory (dispatcher table must stay in sync).
@@ -2667,18 +2667,30 @@ OPTIONS must be separated by SPACE."
 # === dispatcher that calls the right combo of funcs for each user flag.
 # ============================================================================
 
-eix_dep_keys="--use-invalid
--ui
---use-make
--um
---use-full
--uf
---trash
--t
---force-trash
--ft
---full
--f"
+# _needs_eix OPTS: true when any whitespace-separated token in OPTS invokes a
+# function that queries the eix PACKAGE cache (and thus needs eix_check/eix_method
+# to bootstrap it).  Word-exact per token, never a substring match: the old
+# multiline-`grep` table matched `-f` inside `-fr`/`-f2d` (needless bootstrap),
+# listed `-um` (use_makeconf reads no eix at all), and OMITTED `-sm`/`-sum`
+# (mask_trash / remove_trash both query the cache) — so `-rc -sm` silently
+# dropped the fresh cache and ran the mask removal against the stale host one.
+# Cache users: invalid_uses (`eix -e`) + invalid_uses_make (`eix --print-all-
+# useflags`) → -ui/-uf/-f; not_found (`eix -Ttc`) → -t/-ft/-f; mask_trash
+# (`eix -e`) → -sm/-f; remove_trash (`eix -Tc#`/`-qe`/`-Iqe`, via stupid_unmask)
+# → -sum/-f.  NOT cache users: use_makeconf (-um), and stupid_keywords / mask_files
+# whose `eix --print` reads a config var, not the package cache.
+_needs_eix(){
+	local opt
+	for opt in ${1};do
+		case "${opt}" in
+			--use-invalid|-ui|--use-full|-uf|\
+			--trash|-t|--force-trash|-ft|\
+			--stupid-mask|-sm|--stupid-unmask|-sum|\
+			--full|-f) return 0;;
+		esac
+	done
+	return 1
+}
 # Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
@@ -2698,7 +2710,7 @@ opts="$(sed -e 's| --yes\>||g;s| -y\>||g' -e 's| --pretend\>||g;s| -p\>||g' <<< 
 # channel — if we dup-ed onto 3 the unit tests would read bats's stream
 # instead of the test's heredoc-fed stdin.
 exec 9<&0
-if grep -q -- "${eix_dep_keys}" <<< "${opts}";then
+if _needs_eix "${opts}";then
 	if grep -q -e " --regen-cache\>" -e " -rc\>" <<< " ${opts}";then
 		eix_check
 		opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
@@ -2727,13 +2739,7 @@ for OPT in ${opts};do
 	--use-invalid | -ui )
 		backup;
 		invalid_uses;
-		invalid_uses_make;
-		# When eix_method was used (existing host cache, no temp file created),
-		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
-		# so the compound never returns false — otherwise this becomes the
-		# last command of the case arm, propagates up through the dispatch
-		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		invalid_uses_make;;
 	--use-make | -um )
 		backup;
 		use_makeconf;;
@@ -2748,13 +2754,7 @@ for OPT in ${opts};do
 		invalid_uses;
 		invalid_uses_make;
 		use_makeconf;
-		check_use_masked;
-		# When eix_method was used (existing host cache, no temp file created),
-		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
-		# so the compound never returns false — otherwise this becomes the
-		# last command of the case arm, propagates up through the dispatch
-		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		check_use_masked;;
 	--keyword-one | -ko )
 		backup;
 		sort_keywords;;
@@ -2768,13 +2768,7 @@ for OPT in ${opts};do
 		package_env;
 		env_not_installed;
 		empty_files;
-		backup_files;
-		# When eix_method was used (existing host cache, no temp file created),
-		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
-		# so the compound never returns false — otherwise this becomes the
-		# last command of the case arm, propagates up through the dispatch
-		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		backup_files;;
 	--stupid-mask | -sm )
 		backup;
 		mask_trash;;
@@ -2789,13 +2783,7 @@ for OPT in ${opts};do
 		env_not_installed;
 		force_not_installed;
 		empty_files;
-		backup_files;
-		# When eix_method was used (existing host cache, no temp file created),
-		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
-		# so the compound never returns false — otherwise this becomes the
-		# last command of the case arm, propagates up through the dispatch
-		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		backup_files;;
 	--rm-comments | -c )
 		backup;
 		rm_comments;;
@@ -2819,13 +2807,7 @@ for OPT in ${opts};do
 		mask_trash;
 		stupid_unmask;
 		empty_files;
-		backup_files;
-		# When eix_method was used (existing host cache, no temp file created),
-		# eix_cache is empty and the cleanup is a no-op.  Wrap in `|| true`
-		# so the compound never returns false — otherwise this becomes the
-		# last command of the case arm, propagates up through the dispatch
-		# loop, and the binary exits 1 despite every preceding step succeeding.
-		{ [[ -n "${eix_cache:-}" ]] && rm "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true ;;
+		backup_files;;
 	--files-2-dirs | -f2d )
 		backup;
 		f_to_d;;
@@ -2847,5 +2829,13 @@ for OPT in ${opts};do
 	*) printf '%b\n' "${red}Unknown option${restore}: ${OPT}" >&2; help_pc;;
 	esac
 done
+# Free the -rc temporary eix cache ONCE, after every flag has run -- not per
+# arm.  The fresh cache must stay in effect (EIX_CACHEFILE set) for the whole
+# dispatch: a per-arm teardown stranded every flag after the first eix arm on
+# the stale host cache (e.g. `-rc -ui -sm` rebuilt for -ui, then -sm read the
+# host cache).  eix_method's host-cache path leaves eix_cache empty, so this is
+# a no-op there.  rm -f + `|| true`: idempotent with the EXIT-trap _cleanup
+# (the cache file is _mktemp-tracked too), and the guard must not trip set -e.
+{ [[ -n "${eix_cache:-}" ]] && rm -f "${eix_cache}" && unset eix_cache EIX_CACHEFILE; } || true
 _status_pc
 fi # PORTCONF_NO_MAIN / sourcing guard

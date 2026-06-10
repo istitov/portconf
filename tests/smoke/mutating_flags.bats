@@ -21,11 +21,12 @@
 # without crashing, and that the composite arms (-uf chains 6 functions,
 # -t chains 6, -f chains 13+) work as the dispatcher intended.
 #
-# eix-cache strategy: for arms that need real eix (-ui/-um/-uf/-t/-ft/-f
-# pass the `eix_dep_keys` grep), eix_method's "Create temporary cache?"
+# eix-cache strategy: for arms that need real eix (-ui/-uf/-t/-ft/-f/-sm/-sum
+# satisfy the _needs_eix gate), eix_method's "Create temporary cache?"
 # prompt fires when OVERLAY_CACHE_METHOD != "parse|ebuild*" (the modern
 # Gentoo default).  smoke_run pipes "No" to dismiss it; eix then uses
-# the host's existing populated cache to validate test atoms.
+# the host's existing populated cache to validate test atoms.  -um is NOT
+# here -- use_makeconf reads no eix cache.
 
 load test_helper
 
@@ -115,13 +116,32 @@ _assert_port_etc_unchanged() {
 	_assert_brdir_has_backup
 }
 
-@test "smoke: -y -p -sm — backup + mask_trash (real qatom)" {
-	smoke_run -y -p -sm
+@test "smoke: -y -p -um — backup + use_makeconf (reads no eix cache)" {
+	smoke_run -y -p -um
 	[ "$status" -eq 0 ]
 	_assert_brdir_has_backup
 }
 
 # --- composite arms WITH eix-dep-keys (slow path) -----------------------
+# Each calls a handler that queries the eix PACKAGE cache, so _needs_eix fires
+# and eix_method prompts (dismissed with "No" -> host cache) when run without
+# -y.  -sm/-sum (mask_trash / remove_trash) join the set the binary used to
+# skip; -um moved out above (use_makeconf reads no cache).
+
+@test "smoke: -p -sm — backup + mask_trash (real qatom; now gated on eix)" {
+	# Pre-fix, -sm skipped the eix gate entirely and ran mask_trash against
+	# whatever host cache happened to exist; it now routes through eix_method
+	# like -ui, so the "No" pipe (not -y) keeps it on the host cache.
+	smoke_run -p -sm
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
+
+@test "smoke: -p -sum — backup + stupid_unmask -> remove_trash (gated on eix)" {
+	smoke_run -p -sum
+	[ "$status" -eq 0 ]
+	_assert_brdir_has_backup
+}
 
 @test "smoke: -p -ui — invalid_uses composite" {
 	# Without -y, eix_method DOESN'T auto-run eix-update; smoke_run pipes
@@ -130,12 +150,6 @@ _assert_port_etc_unchanged() {
 	[ "$status" -eq 0 ]
 	_assert_brdir_has_backup
 	_assert_port_etc_unchanged
-}
-
-@test "smoke: -p -um — use_makeconf composite" {
-	smoke_run -p -um
-	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
 }
 
 @test "smoke: -p -t — trash composite (6 fns including not_found chain)" {
