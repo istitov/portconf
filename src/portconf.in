@@ -409,8 +409,10 @@ backup(){
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
 	tarballs="$(ls -1 --color=never "${BRDIR}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
-	count="$( wc -l <<< "${tarballs}")"
-	count="${count:-0}"
+	# `wc -l <<< ""` counts 1 (the here-string's trailing newline), so an empty
+	# backup dir would report count=1 and, with COUNT=1, rm the (empty) oldest --
+	# `rm "${BRDIR}/"` then fails and aborts the first backup under set -e.
+	if [[ -z "${tarballs}" ]];then count=0;else count="$( wc -l <<< "${tarballs}")";fi
 	# Derive the tar working dir from PORT_ETC instead of hardcoding /etc/,
 	# so test sandboxes (PORT_ETC=/tmp/foo/portage) don't accidentally tar
 	# the host's real /etc/portage tree.
@@ -457,8 +459,10 @@ world_backup(){
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
 	tarballs="$(ls -1 --color=never "${world_dir}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
-	count="$( wc -l <<< "${tarballs}")"
-	count="${count:-0}"
+	# `wc -l <<< ""` counts 1 (the here-string's trailing newline), so an empty
+	# backup dir would report count=1 and, with COUNT=1, rm the (empty) oldest --
+	# `rm "${BRDIR}/"` then fails and aborts the first backup under set -e.
+	if [[ -z "${tarballs}" ]];then count=0;else count="$( wc -l <<< "${tarballs}")";fi
 	world_update="$(timestamp "${WORLD}")"
 	portconf_update="$(timestamp "${world_dir}"/*)"
 	portconf_update="${portconf_update:-0}"

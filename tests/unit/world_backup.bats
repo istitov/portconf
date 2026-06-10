@@ -42,6 +42,20 @@ teardown() {
 	[[ "$(ls "${BRDIR}/world/" | wc -l)" -eq 1 ]]
 }
 
+@test "world_backup: COUNT=1 + empty world dir does not spuriously rotate" {
+	# `wc -l <<< ""` counted an empty dir as 1, so count=1 >= COUNT=1 fired a
+	# bare `rm "${world_dir}/"` (oldest empty): an error to stderr, and an abort
+	# under the binary's set -e.  An empty dir must count as 0.
+	COUNT=1
+	local err; err="$(mktemp)"
+	world_backup >/dev/null 2>"${err}"
+	run cat "${err}"; rm -f "${err}"
+	# no failed rotation rm of the backup directory itself reached stderr
+	[[ "${output}" != *"${BRDIR}/world/"* ]]
+	# and the backup was still created
+	[ "$(ls -1 "${BRDIR}/world/"*.tar.bz2 2>/dev/null | wc -l)" -eq 1 ]
+}
+
 @test "world_backup: tarball filename matches world_<timestamp>.tar.bz2 pattern" {
 	world_backup
 	run ls "${BRDIR}/world/"
