@@ -370,7 +370,14 @@ eix_check(){
 eix_method(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		if [[ "$(eix --print OVERLAY_CACHE_METHOD)" != "parse|ebuild*" ]];then
-			[[ -n "${yes}" ]] && eix_check
+			# -y: build the temp cache straight away and RETURN.  Returning is
+			# what keeps the run out of the prompt loop below, where a bare
+			# `read x` would consume a line meant for a later diff_ask and a
+			# "" / "Yes" answer would bootstrap the cache a second time.
+			if [[ -n "${yes}" ]];then
+				eix_check
+				return
+			fi
 			printf '%b' "\n${red}!default 'OVERLAY_CACHE_METHOD'${restore}${contrast}\nCreate temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				case ${x} in
