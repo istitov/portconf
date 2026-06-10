@@ -1,3 +1,78 @@
+2026-06-10  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.5 — "Damage Control"
+
+	Data-loss audit.  A six-reviewer sweep of every dispatch handler, with
+	each finding re-checked against the source, surfaced a pervasive class
+	of removal bugs plus one critical one.  The theme: never destroy the
+	wrong thing — every removal now deletes exactly its target, and restore
+	validates a backup before it touches the live tree.
+
+	* restore (-r/-wr): wiped the destination tree and THEN extracted,
+	  swallowing a failed tar — a corrupt/truncated backup, or an
+	  out-of-range menu choice (bash runs the `select` body with an empty
+	  answer), left /etc/portage EMPTY with no way back.  Now `tar -t`
+	  validates the chosen archive and the empty answer is caught BEFORE
+	  the wipe; the destructive step runs only on a known-good backup, and
+	  an empty backup dir reports cleanly instead of aborting.
+	* the removal helpers deleted a config line with an unanchored,
+	  over-broad, unescaped sed, so they also destroyed sibling valid
+	  entries — removing `foo` clipped `foobar`, a bare `cat/pn` nuked
+	  every slot/version of the package, and an atom-with-flags left its
+	  flags orphaned.  A new _drop_line deletes by literal string /
+	  first-field match (never a regex); not_found (-t/-ft), mask_trash
+	  (-sm), stupid_unmask (-sum) and check_use_masked (-sup) all route
+	  through it, and mask_trash stores the slot-qualified atom so a slot
+	  entry matches exactly.
+	* use_makeconf (-um) and invalid_uses_make (-ui/-uf): pruned USE flags
+	  from make.conf by grep-the-flag / sed-the-line — substituting across
+	  the WHOLE file (clipping the flag out of other variables and
+	  comments), missing a flag that was USE's first token, and aborting
+	  under set -e when a flag matched more than one line.  A new
+	  _prune_var_flags rebuilds the USE="..." assignment from its parsed
+	  flags (order, signs and ${VAR} tokens preserved, continuations
+	  collapsed) — no whole-file substitution, no abort.
+	* overlays (-fr): `eselect repository remove` refuses local /
+	  no-sync-uri overlays without -f, so hand-added overlays were detected
+	  as unused but silently never removed.  Pass -f.
+	* empty_files (-t/-ft): walked all of /etc/portage and flagged a
+	  comments-only make.conf or repos.conf for deletion.  Scoped to
+	  package.* config.
+	* f_to_d (-f2d): modern qatom reports a blank line's category as
+	  "<unset>" (was "(null)"), so blank/comment lines were dumped into a
+	  junk file literally named "unset".  Guarded; also reads with -r.
+	* set -e hardening: a bare diff_ask in sort_uniq_files /
+	  sort_uniq_mask_use aborted the whole walk on a no-answer prompt; a
+	  failed eix-update in eix_check stranded a temp categories file in the
+	  user's overlay; repo_fix's categories cat was unguarded and its
+	  grep -v used a multi-line var as a pattern (a blank line matched
+	  everything).  All guarded.
+	* not_found (-t/-ft): the INVALID and emerge paths ignored the user's
+	  IGNORE_CATEGORY/IGNORE_PN (only the first path honored it), so a
+	  protected atom was removed anyway; package_env_conf judged a conf
+	  "unused" with an anchored regex that mismatched metachar names.  Both
+	  now match literally.
+	* an unknown option now errors with usage instead of being silently
+	  ignored, and a mutating run prints a one-line summary (updated /
+	  pretend / nothing-applied / no-changes) so it is never silent — this
+	  resolves the "portconf -p -y --use-full changes nothing" report (-p
+	  is a dry run; pretend wins over -y).
+
+	Tests:
+	* New tests/unit/drop_line.bats and tests/unit/prune_var_flags.bats
+	  cover the two new removal helpers (literal / first-field match,
+	  prefix/slot siblings kept, multi-line, no-collateral);
+	  tests/unit/status_pc.bats the status line.  New
+	  tests/property/status_line.bats and tests/property/make_conf_use.bats
+	  drive the built binary end to end (the -p -y dry-run; the make.conf
+	  no-abort / no-collateral).  Collateral- and safety-regression cases
+	  added to the not_found, mask_trash, restore, overlays, empty_files
+	  and conversions suites.  231 unit / 82 integration / 35 smoke / 19
+	  property.
+
+	Build:
+	* configure.ac: bump to 2.0.5.
+
 2026-06-09  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.4 — "Groundhog Day"
