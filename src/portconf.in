@@ -1731,7 +1731,10 @@ empty_files(){
 	printf '%b\n' "${underline}Looking empty files${restore}"
 	while IFS= read -r target; do
 		[[ ! -s "${target}" || -z "$(grep -v "^#" < "${target}" || true)" ]] && remove_ask "${target}"
-	done < <(find "${PORT_ETC}" -type f)
+	# Only package.* config: a comments-only or empty make.conf / repos.conf is
+	# legitimate and must never be auto-removed here (the old unfiltered find
+	# flagged them for deletion).
+	done < <(find "${PORT_ETC}" -type f -path '*/package.*')
 	eend 0 2>/dev/null
 }
 # backup_files: remove editor backups (*~, *.bak, *.old) from $PORT_ETC.

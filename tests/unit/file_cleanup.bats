@@ -59,6 +59,16 @@ teardown() {
 	[[ ! -f "${TEST_PORT_ETC}/package.mask" ]]
 }
 
+@test "empty_files: a comments-only make.conf is NOT removed" {
+	# make.conf / repos.conf are not package.* config — empty_files must leave
+	# them alone even when comments-only.
+	printf '%s\n' "# my make.conf" > "${TEST_PORT_ETC}/make.conf"
+	printf '%s\n' "# only comment" > "${TEST_PORT_ETC}/package.mask"
+	empty_files
+	[[ -f "${TEST_PORT_ETC}/make.conf" ]]
+	[[ ! -f "${TEST_PORT_ETC}/package.mask" ]]
+}
+
 # --- backup_files ---
 
 @test "backup_files: tilde file removed (yes=1)" {
