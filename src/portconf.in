@@ -1587,7 +1587,6 @@ _prune_var_flags() {
 
 # invalid_uses_make: remove USE flags from make.conf not present in any known IUSE (per `eix --print-all-useflags`).
 invalid_uses_make(){
-	invalid_uses=""
 	# No make.conf → ${makefile} is empty; skip rather than `cp ""` + abort.
 	[[ -n "${makefile}" ]] || return 0
 	# See invalid_uses for the `local -` rationale.
