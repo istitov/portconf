@@ -84,6 +84,24 @@ _sed_escape_rep() {
 	printf '%s' "$s"
 }
 
+# _drop_line FILE VALUE: delete every line of FILE that equals VALUE, compared
+# as a trimmed LITERAL string (awk string equality, not a regex).  Replaces the
+# fragile `sed -e "s|^${x}.*||"` / `s|${x}||` removals whose unanchored,
+# over-broad, or unescaped patterns also deleted prefix-sibling or
+# metachar-matching valid entries (removing `foo` nuked `foobar`; a bare
+# `cat/pn` nuked every slot).  String equality can never collateral-match.
+_drop_line() {
+	local f="$1" v="$2" tmp
+	tmp="$(_mktemp)"
+	awk -v v="${v}" '
+		BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
+		{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
+		t == v { next }
+		{ print }
+	' "${f}" > "${tmp}"
+	mv "${tmp}" "${f}"
+}
+
 # tput wrapper that no-ops when stdout isn't a TTY.  Cursor-control codes
 # (sc, civis, el, el1, rc, cnorm) corrupt output when emitted to a pipe
 # or file, and tput itself errors when $TERM is unset or dumb.
@@ -2008,7 +2026,7 @@ remove_trash(){
 					else
 						printf '%b\n' "stupid entry (${red}!${restore}installed): ${green}${line}${restore}"
 					fi
-					sed -e "s|${line}||" -e '/^$/d' -i "${tmp_file}"
+					_drop_line "${tmp_file}" "${line}"
 					break
 				fi
 			fi
@@ -2153,15 +2171,15 @@ etc_profile_use_mask() {
 		if grep -q "^${use}$" <<< "$(use_mask)";then
 			if grep -q "^-" <<< "${use}";then
 				printf '%b\n' "Twice unmasked: ${red}${use}${restore}"
-				sed -e "s|^${use}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
+				_drop_line "${tmp_file}" "${use}"
 			else
 				printf '%b\n' "Twice masked: ${red}${use}${restore}"
-				sed -e "s|^${use}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
+				_drop_line "${tmp_file}" "${use}"
 			fi
 		else
 			if grep -q "^-" <<< "${use}";then
 				printf '%b\n' "Stupid unmask: ${red}${use}${restore}"
-				sed -e "s|^${use}.*||" -e '/^$/d' -e 's/[ \t]*$//' -i "${tmp_file}"
+				_drop_line "${tmp_file}" "${use}"
 			fi
 		fi
 	done < "${orig_file}"
