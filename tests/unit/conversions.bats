@@ -108,6 +108,16 @@ teardown() {
 	assert_output "app-misc/foo bar baz"
 }
 
+@test "d_to_f: a backslash in content is not mangled" {
+	# Old inner `while read line` (no -r) ate the backslash -- "a\tb" became
+	# "atb".  cat copies the sub-file verbatim.
+	mkdir -p "${TEST_PORT_ETC}/package.use"
+	printf '%s\n' 'app-misc/foo a\tb' > "${TEST_PORT_ETC}/package.use/app-misc"
+	d_to_f
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output 'app-misc/foo a\tb'
+}
+
 @test "d_to_f: multiple sub-files concatenated" {
 	mkdir -p "${TEST_PORT_ETC}/package.use"
 	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use/app-misc"

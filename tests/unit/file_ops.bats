@@ -50,6 +50,16 @@ write_package_use() {
 	assert_output "$(printf 'sys-kernel/linux-firmware -savedconfig\napp-arch/zip -natspec')"
 }
 
+@test "rm_comments: removes an indented whole-line comment" {
+	# `^#` missed a comment with leading whitespace; `^[[:space:]]*#` catches it.
+	# An inline comment (handled by the test above) still starts with an atom,
+	# so it is unaffected.
+	write_package_use "  # indented comment" "app-arch/zip -natspec"
+	rm_comments
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "app-arch/zip -natspec"
+}
+
 # --- rm_all_comments ---
 
 @test "rm_all_comments: strips inline comments" {

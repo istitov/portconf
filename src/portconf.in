@@ -812,7 +812,7 @@ rm_comments(){
 	no_newline(){
 		tmp_file="$(_mktemp)"
 		cp "${file}" "${tmp_file}"
-		sed -e "s|^#.*||g" -e '/^$/d' -i "${tmp_file}"
+		sed -e "s|^[[:space:]]*#.*||g" -e '/^$/d' -i "${tmp_file}"
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
 	}
@@ -1554,6 +1554,7 @@ invalid_uses(){
 }
 # make_conf_use: emit make.conf's NAME="..." assignment line (single- or multi-line form).
 make_conf_use() {
+	local defined_flags
 	defined_flags="$(grep "${1}=\".*\"" "${makefile}" || true)"
 	defined_flags="${defined_flags:-"$(sed -ne "/${1}=\"/,/\"/p" "${makefile}")"}"
 	echo "${defined_flags}"
@@ -1856,9 +1857,10 @@ d_to_f(){
 			file="${PORT_ETC}/${package##*/}"
 			touch "${file}"
 			while IFS= read -r subfile; do
-				while read line;do
-					echo "${line}" >> "${tmp_file}"
-				done < "${subfile}"
+				# cat, not a `while read line; echo` loop: read without -r
+				# mangles backslashes and the default IFS strips leading
+				# whitespace -- cat copies each sub-file's bytes verbatim.
+				cat "${subfile}" >> "${tmp_file}"
 			done < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
 			rm -rf "${package}" 2>/dev/null
 			mv "${tmp_file}" "${package}" 2>/dev/null
