@@ -1542,6 +1542,47 @@ hell_parser(){
 	cut -d\" -f2 | tr "[[:space:]]" $'\n' | sed '/^$/d;s|^-||g'  | sort -u
 }
 
+# _prune_var_flags FILE VAR MODE FLAGS: rewrite ${VAR}="..." in FILE, dropping
+# flags.  MODE "token" drops the exact tokens in FLAGS (newline-separated);
+# "base" drops any token whose base (a leading -/+ stripped) is in FLAGS.  Token
+# order and the signs of kept flags are preserved, a single- or `\`-continued
+# assignment is collapsed to one line, and `$`-tokens (USE="${VIDEO_CARDS} ...")
+# never match so they survive.  Replaces the old grep-the-flag / sed-the-line
+# removal, which substituted across the WHOLE make.conf (collateral on other
+# vars + comments), missed a first-token flag, and aborted under set -e when a
+# multi-line grep fed a newline into the sed pattern.
+_prune_var_flags() {
+	local -; set -f
+	local file="$1" var="$2" mode="$3" flags="$4" block value kept tok match tmp
+	block="$(make_conf_use "${var}")"
+	[[ -n "${block}" ]] || return 0
+	# Collapse a `\`-continued assignment to one logical line, then take the
+	# value between the first and last double-quote.
+	block="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' <<< "${block}")"
+	value="$(sed -n 's/^[^"]*"\(.*\)".*/\1/p' <<< "${block}")"
+	kept=""
+	for tok in ${value};do
+		[[ "${mode}" == "base" ]] && match="${tok#[-+]}" || match="${tok}"
+		if grep -qxF -- "${match}" <<< "${flags}";then
+			continue
+		fi
+		kept+="${tok} "
+	done
+	kept="${kept% }"
+	tmp="$(_mktemp)"
+	awk -v var="${var}" -v val="${kept}" '
+		skip { if ($0 !~ /\\[[:space:]]*$/) skip=0; next }
+		!done_var && $0 ~ "^[[:space:]]*" var "=" {
+			print var "=\"" val "\""
+			if ($0 ~ /\\[[:space:]]*$/) skip=1
+			done_var=1
+			next
+		}
+		{ print }
+	' "${file}" > "${tmp}"
+	mv "${tmp}" "${file}"
+}
+
 # invalid_uses_make: remove USE flags from make.conf not present in any known IUSE (per `eix --print-all-useflags`).
 invalid_uses_make(){
 	invalid_uses=""
@@ -1558,27 +1599,17 @@ invalid_uses_make(){
 	real_uses="$(eix --print-all-useflags | sed 's|^[-+]||g;s|^(+)||g' | sort -u)"
 	for var in ${vars_in_USE} USE;do
 		sub_uses="$(make_conf_use ${var} | hell_parser | grep -v '\$' || true)"
+		var_invalid=""
 		for use in ${sub_uses};do
 			if ! grep -q "^${use}$" <<< "${real_uses}" && [[ "${use}" != "*" ]];then
 				printf '%b' "Invalid use ${contrast} ${var}: ${red}${use}${restore}" | column -t
-				invalid_uses+=" ${use}"
+				var_invalid+="${use}"$'\n'
 			fi
 		done
+		# Rebuild this variable's assignment without its invalid flags (base
+		# mode: a flag absent from every IUSE is invalid with either sign).
+		[[ -n "${var_invalid}" ]] && _prune_var_flags "${tmp_file}" "${var}" base "${var_invalid}"
 	done
-
-	if [[ -n "${invalid_uses}" ]];then
-		for iuse in ${invalid_uses};do
-			line="$(grep "\<${iuse}\>" "${tmp_file}" || true)"
-			[[ -z "${line}" ]] && continue
-			fixed_line="$(sed "s|[- \t]${iuse}||" <<< "${line}")"
-			if [[ "${line}" != "${fixed_line}" ]]; then
-				_p="${line%\\}";    _p="${_p//\\/\\\\}"; _p="${_p//|/\\|}"; _p="${_p//./\\.}"
-				_r="${fixed_line%\\}"; _r="${_r//\\/\\\\}"; _r="${_r//|/\\|}"; _r="${_r//&/\\&}"
-				sed -e "s|${_p}|${_r}|" -i "${tmp_file}"
-				unset _p _r
-			fi
-		done
-	fi
 	diff_ask "${makefile}" "${tmp_file}"
 	# `local -` at function entry restores set -f state on return.
 }
@@ -1705,18 +1736,24 @@ use_makeconf(){
 
 	tmp_file="$(_mktemp)"
 	cp "${makefile}" "${tmp_file}"
+	# Collect the make.conf USE tokens the profile already sets the same way
+	# (redundant), then prune them from the USE assignment in one rebuild -- the
+	# old per-flag whole-file sed bled into other vars/comments and missed a
+	# first-token flag.
+	redundant=""
 	while read use;do
 		flag="${use#-}"
 		if [[ -n ${flag} ]];then
 			if grep -q "^${flag}$" <<< "${USE}" && grep -q "^${flag}$" <<< "${PROFILE}";then
 				printf '%b\n' "Twice defined: ${red}${use}${restore}"
-				sed -e "s|[^[:punct:]]\<${flag}\>||g" -i "${tmp_file}"
+				redundant+="${flag}"$'\n'
 			elif grep -q "^-${flag}$" <<< "${USE}" && grep -q "^-${flag}$" <<< "${PROFILE}";then
 				printf '%b\n' "Twice defined: ${red}-${use}${restore}"
-				sed -e "s|[^[:punct:]]\-\<${flag}\>||g" -i "${tmp_file}"
+				redundant+="-${flag}"$'\n'
 			fi
 		fi
 	done <<< "${PROFILE}"
+	[[ -n "${redundant}" ]] && _prune_var_flags "${tmp_file}" USE token "${redundant}"
 	diff_ask "${makefile}" "${tmp_file}"
 	eend $? 2>/dev/null
 }
