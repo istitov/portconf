@@ -26,6 +26,7 @@ EXTRA_DIST = \
 	tests/unit/sort_uniq_files.bats \
 	tests/unit/uniq_keywords.bats \
 	tests/unit/sort_keywords.bats \
+	tests/unit/stupid_keywords.bats \
 	tests/unit/sort_uniq_mask_use.bats \
 	tests/unit/ver_helpers.bats \
 	tests/unit/timestamp.bats \

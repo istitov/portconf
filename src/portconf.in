@@ -948,11 +948,16 @@ sort_use_file(){
 # stupid_keywords: remove per-package keywords that already match the system ACCEPT_KEYWORDS or a wildcard parent entry.
 stupid_keywords(){
 	unset ACCEPT_KEYWORDS
-	local ACCEPT_KEYWORDS
+	local ACCEPT_KEYWORDS _redundant
 	ACCEPT_KEYWORDS="$(eix --print ACCEPT_KEYWORDS)"
 	for KEY in ${ACCEPT_KEYWORDS};do
 		while read satom lkeys;do
-			comment="$(cut -d\# -f2- <<< "${lkeys}")"
+			# -s: a line with no '#' has no comment.  Without it cut returns the
+			# WHOLE keyword list as the "comment", which sends a comment-less line
+			# down the with-comment branch below where the grep can't match (so a
+			# redundant keyword is left in place, and an empty `string` turns the
+			# later `s|^$|...|` into a blank-line corruptor).
+			comment="$(cut -d\# -s -f2- <<< "${lkeys}")"
 			lkeys="${lkeys%%#*}"
 			lkeys="${lkeys%% }"
 			out_keys="$(tr ' ' $'\n' <<< "${lkeys}")"
@@ -963,12 +968,20 @@ stupid_keywords(){
 			#### /wildcards
 			if [[ "${satom}" != "${pcategory}/*" && "${satom}" != "*/*" ]];then
 				for key in ${lkeys};do
+					# Redundant if it matches a system ACCEPT_KEYWORDS entry --
+					# checked regardless of parent wildcards.  This test used to
+					# sit inside the parent loop, so it never ran for a package
+					# with no parent wildcard (empty parent_keys -> the loop body,
+					# and the system check inside it, was skipped).
+					_redundant=""
+					[[ "${key}" == "${KEY}" ]] && _redundant=1
 					for pkey in ${parent_keys};do
-						if [[ "${key}" == "${KEY}" || ${key} == "${pkey}" ]];then
-							printf '%b\n' "Twice defined keyword ${red}${key}${restore}:\t${green}${satom}${restore}"
-							out_keys="$(grep -v "$(printf '%s' "${key}")"  <<< "${out_keys}" || true)"
-						fi
+						[[ "${key}" == "${pkey}" ]] && _redundant=1
 					done
+					if [[ -n "${_redundant}" ]];then
+						printf '%b\n' "Twice defined keyword ${red}${key}${restore}:\t${green}${satom}${restore}"
+						out_keys="$(grep -v "$(printf '%s' "${key}")"  <<< "${out_keys}" || true)"
+					fi
 				done
 			fi
 			out_keys="$(tr $'\n' ' ' <<< "${out_keys}")"
@@ -986,7 +999,7 @@ stupid_keywords(){
 					string="$(grep "^${satom} ${lkeys}.*$" "${1}" || true)"
 					fixed_string=""
 				fi
-				sed -e "s|^${string//\*/\\*}$|${fixed_string}|"  -e '/^$/d' -i "${2}" || echo fail 525
+				sed -e "s|^${string//\*/\\*}$|${fixed_string}|"  -e '/^$/d' -i "${2}" || true
 			fi
 		done < "${1}"
 	done
