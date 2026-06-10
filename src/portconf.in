@@ -630,6 +630,11 @@ diff_ask(){
 }
 # remove_ask: prompt for confirmation before removing entries from package.* files.
 remove_ask(){
+	# Feed the status line like diff_ask: a removal candidate is a change found,
+	# a successful rm a change applied -- without this a removal-only run (e.g.
+	# empty_files / not_found) ended with no end-of-run summary.
+	_changes_seen=1
+	_changes_found=$(( _changes_found + 1 ))
 	if [[ -z "${yes}" && -z "${PRETEND}" ]];then
 		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
 		# Same stdin reroute as diff_ask — see comment there.
@@ -638,7 +643,7 @@ remove_ask(){
 		while read -u "${_ans_fd}" x;do
 			case ${x} in
 				Yes | YES | yes | Y | y | "" )
-					rm -rf "${1}" 2>/dev/null
+					rm -rf "${1}" 2>/dev/null && _changes_applied=$(( _changes_applied + 1 ))
 					break;;
 				No | NO | no | N | n )
 					break;;
@@ -649,7 +654,7 @@ remove_ask(){
 		eend $? 2>/dev/null
 	elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
 		printf '%b\n' "${contrast}Removing${restore} ${green}${1}${restore}"
-		rm -rf "${1}" 2>/dev/null
+		rm -rf "${1}" 2>/dev/null && _changes_applied=$(( _changes_applied + 1 ))
 		eend $? 2>/dev/null
 	elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
 		eend 0 2>/dev/null

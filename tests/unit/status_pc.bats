@@ -16,6 +16,11 @@ load 'test_helper'
 setup() {
 	load_portconf
 	export TERM="${TERM:-dumb}"
+	# remove_ask ends on `eend`; the real Gentoo eend manipulates fds and breaks
+	# bats, and load_portconf alone doesn't install the stub make_test_portage
+	# uses.  Stub it here (the diff_ask paths return before any eend, so this is
+	# inert for the existing tests).
+	eend() { return "${1:-0}"; }
 	_f1="$(mktemp)"
 	_f2="$(mktemp)"
 }
@@ -63,6 +68,25 @@ teardown() {
 	diff_ask "${_f1}" "${_f2}" >/dev/null
 	[ "${_changes_found}" -eq 2 ]
 	[ "${_changes_applied}" -eq 2 ]
+}
+
+# --- wiring: remove_ask feeds the counters too ------------------------------
+
+@test "wiring: remove_ask -y bumps found + applied, sets seen, removes file" {
+	yes="1"; PRETEND=""
+	remove_ask "${_f1}" >/dev/null
+	[ "${_changes_seen}" = "1" ]
+	[ "${_changes_found}" -eq 1 ]
+	[ "${_changes_applied}" -eq 1 ]
+	[ ! -e "${_f1}" ]
+}
+
+@test "wiring: remove_ask pretend bumps found but not applied, keeps file" {
+	yes=""; PRETEND="1"
+	remove_ask "${_f1}" >/dev/null
+	[ "${_changes_found}" -eq 1 ]
+	[ "${_changes_applied}" -eq 0 ]
+	[ -e "${_f1}" ]
 }
 
 # --- _status_pc message branches --------------------------------------------
