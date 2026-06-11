@@ -194,3 +194,31 @@ teardown() {
 	run grep -F 'sys-apps/grep:0' "${PORT_ETC}/package.mask"
 	assert_success
 }
+
+# --- stale / missing eix cache: a version-comparison verdict must NOT remove
+#     a valid mask when eix can't resolve the package (#112) ----------------
+#
+# eix exits non-zero and prints "No matches found" for a package absent from
+# the cache.  Pre-fix, mask_trash captured that string (oldest="No"); a later
+# ver_diff(uver, "No") ran `versionsort uver No`, which errors on the bogus
+# "No" and yields empty output, so ver_diff returned "" — and the `!= "1"`
+# verdict branches (the >=/<= same-slot arms and the >= non-slot arm) read ""
+# as "not greater", firing removal of a VALID mask for a package whose versions
+# it never actually saw.  cat-test/foo is a synthetic atom guaranteed absent
+# from any eix cache, so it reproduces the stale/missing-entry path.
+
+@test "mask_trash: >= unmask, same slot — mask kept when eix can't resolve the package" {
+	printf 'cat-test/foo:0\n'       > "${PORT_ETC}/package.mask"
+	printf '>=cat-test/foo-2.0:0\n' > "${PORT_ETC}/package.unmask"
+	mask_trash
+	run grep -F 'cat-test/foo:0' "${PORT_ETC}/package.mask"
+	assert_success
+}
+
+@test "mask_trash: >= mask + >= unmask — mask kept when eix can't resolve the package" {
+	printf '>=cat-test/foo-1.0\n' > "${PORT_ETC}/package.mask"
+	printf '>=cat-test/foo-1.0\n' > "${PORT_ETC}/package.unmask"
+	mask_trash
+	run grep -F '>=cat-test/foo-1.0' "${PORT_ETC}/package.mask"
+	assert_success
+}

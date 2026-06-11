@@ -2028,8 +2028,16 @@ mask_trash(){
 		versions=""
 		oldest=""
 		if [[ -n "${_mver}" ]]; then
-			versions="$(eix -e "${mcategory}/${mpn}" || true)"
-			oldest="$(awk '{print $1}' <<< "${versions}" || true)"
+			# eix exits non-zero AND prints "No matches found" when the package
+			# isn't in the cache (a stale or missing entry).  Gate on the exit
+			# status so a miss yields an EMPTY versions/oldest -- not the literal
+			# "No matches found" whose first word "No" would sail past the -n
+			# guards below and feed ver_diff garbage.
+			if versions="$(eix -e "${mcategory}/${mpn}" 2>/dev/null)";then
+				oldest="$(awk '{print $1}' <<< "${versions}" || true)"
+			else
+				versions=""; oldest=""
+			fi
 		fi
 		unset _mver
 		# shellcheck disable=SC2034  # ucategory/upn/ufile are positional placeholders consumed by `read` even though the loop body only references usw/uver/urev/uslot
@@ -2046,8 +2054,11 @@ mask_trash(){
 			# ver_btwn below.  Compute once per outer iteration on first
 			# need (rare path).
 			if [[ -z "${versions}" && -n "${uver}" ]];then
-				versions="$(eix -e "${mcategory}/${mpn}" || true)"
-				oldest="$(awk '{print $1}' <<< "${versions}" || true)"
+				if versions="$(eix -e "${mcategory}/${mpn}" 2>/dev/null)";then
+					oldest="$(awk '{print $1}' <<< "${versions}" || true)"
+				else
+					versions=""; oldest=""
+				fi
 			fi
 
 			if [[ -n "${mver}" && -n "${uver}" ]];then
@@ -2060,7 +2071,7 @@ mask_trash(){
 					non_slot_output
 				elif [[ "${msw}" == ">" || "${msw}" == ">=" ]];then
 					if [[ "${usw}" == ">" || "${usw}" == ">=" ]];then
-						if [[ "${versions_diff}" != "1" && -z "${versions_btwn}" ]];then
+						if [[ -n "${versions}" && "${versions_diff}" != "1" && -z "${versions_btwn}" ]];then
 							non_slot_output
 						fi
 					fi
@@ -2073,13 +2084,21 @@ mask_trash(){
 				fi
 			else
 				if [[ "${mslot}" == "${uslot}" ]];then
+					# Each version-comparison arm needs a real ${oldest} from
+					# eix.  On a stale/missing cache the exit-gated fetch above
+					# leaves it empty; ver_diff against an empty arg returns 1
+					# (unquoted arg -> single-arg versionsort), which slips
+					# through both the >=/<= `!= "1"` tests and the "<" `== "1"`
+					# test and wrongly drops a valid same-slot mask.  An
+					# unversioned unmask (usw "(null)") subsumes the slot
+					# regardless, so it stays unguarded.
 					if [[ "${usw}" == ">=" || "${usw}" == ">" ]];then
-						if [[ "$(ver_diff "${uver}" "${oldest}" || true)" != "1" ]];then
+						if [[ -n "${oldest}" && "$(ver_diff "${uver}" "${oldest}" || true)" != "1" ]];then
 							slot_output
 						fi
-					elif [[ "${usw}" == "<"  && "$(ver_diff "${uver}" "${oldest}" || true)" == "1" ]];then
+					elif [[ "${usw}" == "<"  && -n "${oldest}" && "$(ver_diff "${uver}" "${oldest}" || true)" == "1" ]];then
 						slot_output
-					elif [[ "${usw}" == "<=" && "$(ver_diff "${uver}" "${oldest}" || true)" != "1" ]];then
+					elif [[ "${usw}" == "<=" && -n "${oldest}" && "$(ver_diff "${uver}" "${oldest}" || true)" != "1" ]];then
 						slot_output
 					elif [[ "${usw}" == "(null)" ]];then
 						slot_output
