@@ -1303,27 +1303,32 @@ package_env(){
 			atom="${xline%% *}"
 			all_confs="${xline#${atom} }"
 			for conf in ${all_confs};do
-				if [[ -f "${PORT_ETC}/env/${conf}" ]];then
-					IGNORE+=$'\n'"${conf}"
-				else
-					printf '%b\n' "Defined conf not exists: ${red}${conf}${restore}"
-					new_line=$(grep -v "^${conf}$" <<< "$(tr ' ' $'\n' <<< "${line}")" | tr $'\n' ' ' || true)
-					new_line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${new_line}")"
-					# Escape sed metacharacters before interpolating user-
-					# controlled content from package.env into the s|||
-					# pattern.  Without this, lines containing `|`, `\`,
-					# `.`, `[`, `*`, `&` corrupt or silently break the
-					# in-place edit.  Atoms with USE-dep brackets like
-					# `sys-apps/grep[static]` are the most common trigger.
-					_p="${line//\\/\\\\}";     _p="${_p//|/\\|}"
-					_p="${_p//./\\.}";         _p="${_p//\[/\\[}"
-					_p="${_p//\*/\\*}"
-					_r="${new_line//\\/\\\\}"; _r="${_r//|/\\|}"
-					_r="${_r//&/\\&}"
-					sed "s|${_p}|${_r}|" -i "${tmp_file}"
-					unset _p _r
-					line="${new_line}"
-				fi
+				# A conf that still exists on disk is fine -- leave the line
+				# alone.  This branch used to do `IGNORE+=$'\n'"${conf}"`,
+				# leaking the conf BASENAME into the GLOBAL IGNORE pattern that
+				# not_found / invalid_uses / env_not_installed all `grep -v`
+				# against later in the same run -- so a conf called `static` or
+				# `gcc` silently filtered out every atom or env path containing
+				# that substring.  package_env has no business mutating the
+				# user's IGNORE, so it no longer does.
+				[[ -f "${PORT_ETC}/env/${conf}" ]] && continue
+				printf '%b\n' "Defined conf not exists: ${red}${conf}${restore}"
+				new_line=$(grep -v "^${conf}$" <<< "$(tr ' ' $'\n' <<< "${line}")" | tr $'\n' ' ' || true)
+				new_line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${new_line}")"
+				# Escape sed metacharacters before interpolating user-
+				# controlled content from package.env into the s|||
+				# pattern.  Without this, lines containing `|`, `\`,
+				# `.`, `[`, `*`, `&` corrupt or silently break the
+				# in-place edit.  Atoms with USE-dep brackets like
+				# `sys-apps/grep[static]` are the most common trigger.
+				_p="${line//\\/\\\\}";     _p="${_p//|/\\|}"
+				_p="${_p//./\\.}";         _p="${_p//\[/\\[}"
+				_p="${_p//\*/\\*}"
+				_r="${new_line//\\/\\\\}"; _r="${_r//|/\\|}"
+				_r="${_r//&/\\&}"
+				sed "s|${_p}|${_r}|" -i "${tmp_file}"
+				unset _p _r
+				line="${new_line}"
 			done
 		done < "${file}"
 		diff_ask "${file}" "${tmp_file}"

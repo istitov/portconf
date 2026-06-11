@@ -39,6 +39,23 @@ teardown() {
 	assert_success
 }
 
+@test "package_env: a present conf does NOT leak into the global IGNORE" {
+	# Regression for the IGNORE-overload: package_env used to append every
+	# still-existing conf basename to the GLOBAL IGNORE, polluting the pattern
+	# that not_found / invalid_uses / env_not_installed all `grep -v` against
+	# later in the same run -- so a conf named e.g. `static` silently filtered
+	# out any atom containing that substring.  package_env must leave IGNORE
+	# untouched.
+	: > "${PORT_ETC}/env/keep.conf"
+	printf 'sys-apps/grep keep.conf\n' > "${PORT_ETC}/package.env"
+	local before="${IGNORE}"
+	package_env
+	[[ "${IGNORE}" == "${before}" ]] || {
+		echo "IGNORE was mutated: before=[${before}] after=[${IGNORE}]" >&2
+		false
+	}
+}
+
 # --- sed-injection regression: USE-dep brackets in atom ---
 
 @test "package_env: atom with [USE] brackets doesn't corrupt file" {
