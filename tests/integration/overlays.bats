@@ -164,3 +164,37 @@ EOF
 	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
 	[[ "${output}" == *'eselect repository remove -f stubborn'* ]]
 }
+
+# --- dep-cache cleanup: stale entries are actually removed (regression) ---
+
+@test "overlays: stale dep-cache entries are removed and the loop terminates" {
+	# fix_deps() flags every DEP_PATH entry whose corresponding repo path is
+	# gone, and the final `while [[ -z "${stop}" ]]` loop rm's the batch.
+	# Plant two stale entries: a path stripped of the DEP_PATH prefix lands at
+	# filesystem root, which never exists -> both are trash.  Two of them makes
+	# the multi-path word-split explicit (the historical bug quoted the whole
+	# space-separated list into ONE literal arg, so rm -f no-oped, fix_deps
+	# re-found the identical trash, and the loop spun forever -- with NO host
+	# coverage because the suite sandboxes DEP_PATH to an empty dir).
+	local dep_a="${DEP_PATH}/gone-repo-a-$$"
+	local dep_b="${DEP_PATH}/gone-repo-b-$$"
+	mkdir -p "${dep_a}" "${dep_b}"
+	[ -d "${dep_a}" ] && [ -d "${dep_b}" ]
+
+	# Drive the REAL overlays() in a fresh, time-boxed shell.  `timeout`
+	# yields a clean exit code (124 on a hang) -- unlike backgrounding the
+	# already-sourced function, where `kill -0` on the unreaped zombie can't
+	# tell "finished" from "still spinning".  Re-source picks up DEP_PATH et al.
+	# from the passed-through env; overlays needs no stdin here (empty PKGDB /
+	# repos.conf -> no prompt is read before the dep-cache loop).
+	run timeout 20 env \
+		PORT_ETC="${PORT_ETC}" PKGDB="${PKGDB}" DEP_PATH="${DEP_PATH}" \
+		bash -c 'PORTCONF_NO_MAIN=1 source "$1"; overlays </dev/null' \
+		_ "${BATS_TEST_DIRNAME}/../../src/portconf.in"
+
+	# 124 == timeout killed it == the loop never terminated == bug present.
+	[ "$status" -ne 124 ]
+	# And the stale entries must actually be gone (the no-op rm left them).
+	[ ! -d "${dep_a}" ]
+	[ ! -d "${dep_b}" ]
+}

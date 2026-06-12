@@ -2641,7 +2641,17 @@ overlays(){
 		trash="$(fix_deps)"
 		if [[ -n "${trash}" ]];then
 			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|removing:\\${green}|;s|$|\\${restore}|")"
-			rm -rf "${trash}" 2>/dev/null || { echo failed; exit 1; }
+			# ${trash} is a space-separated list of dep-cache paths built by
+			# fix_deps -- including `${dep_path}/*` glob entries -- that MUST
+			# word-split and glob-expand into individual rm operands.  Quoting it
+			# (a `safety: quoting audit` SC2086 sweep did, commit 9ff4e65)
+			# collapsed the whole list into a single nonexistent literal path; rm
+			# -f then silently no-ops, fix_deps re-finds the identical trash next
+			# iteration, and the `while [[ -z "${stop}" ]]` loop never reaches its
+			# empty-trash break -- spinning forever on every -fr with real
+			# dep-cache to clean.  Keep it unquoted on purpose.
+			# shellcheck disable=SC2086
+			rm -rf ${trash} 2>/dev/null || { echo failed; exit 1; }
 		else
 			break
 			
