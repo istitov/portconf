@@ -112,3 +112,19 @@ _install() {
 	env_not_installed
 	[[ -e "${PORT_ETC}/env/cat-test/keepme" ]]
 }
+
+# --- several stale files in ONE run (the %-joined RM consume-loop regression) ---
+
+@test "env_not_installed: removes ALL stale env files when several are uninstalled at once" {
+	# Two uninstalled packages -> both accumulate in the single %-joined RM
+	# string.  The old `IFS='%' read -r target` consumed the whole "p1%p2"
+	# blob in one iteration, so remove_ask got a single bogus combined path
+	# and NEITHER file was removed.  Every other test stages exactly one stale
+	# file, where the degenerate single-element list happened to work -- so the
+	# multi-file path had zero coverage.
+	: > "${PORT_ETC}/env/cat-test/gone_one"
+	: > "${PORT_ETC}/env/cat-test/gone_two"
+	env_not_installed
+	[[ ! -e "${PORT_ETC}/env/cat-test/gone_one" ]]
+	[[ ! -e "${PORT_ETC}/env/cat-test/gone_two" ]]
+}

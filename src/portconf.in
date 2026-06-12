@@ -1409,10 +1409,18 @@ env_not_installed(){
 			done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]' "${file}" 2>/dev/null || true)"
 		done <<< "${files}"
 
-		while IFS='%' read -r target; do
+		# RM is one %-joined string ("p1%p2%p3"); env file names never contain
+		# % so split on it into one path per line BEFORE reading.  `IFS='%'
+		# read -r target` with a single var does NOT iterate per field -- it
+		# consumes the whole line in one pass and hands remove_ask the entire
+		# "p1%p2%p3" blob as a single bogus path, so with two or more stale env
+		# files in one run NONE are removed (rm -rf on the nonexistent combined
+		# path -f-no-ops).  A single stale file happened to work, which is why
+		# every existing test (one file each) passed.
+		while IFS= read -r target; do
 			[[ -z "${target}" ]] && continue
 			remove_ask "${target}"
-		done <<< "${RM%\%}"
+		done <<< "$(tr '%' $'\n' <<< "${RM%\%}")"
 		while IFS= read -r target; do
 			[[ -z "$(ls "${target}")" ]] && remove_ask "${target}"
 		done <<< "${dirs}"
