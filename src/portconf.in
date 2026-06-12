@@ -1348,51 +1348,65 @@ env_not_installed(){
 	RM=""
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
 	for x in "env" "env.d";do
-		files="$(find "${PORT_ETC}/${x}/" -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null | cut -d\/ -f5- || true)"
+		# Env files live at env/<category>/<pn>[-ver][:slot], exactly two levels
+		# deep.  Take the LAST TWO path components (rev|cut|rev) rather than a
+		# fixed `cut -f5-`, which assumed a /etc/portage-depth root and mis-sliced
+		# any sandbox / non-default ${PORT_ETC}.
+		files="$(find "${PORT_ETC}/${x}/" -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null | rev | cut -d\/ -f1-2 | rev || true)"
 		[[ -n "${IGNORE}" ]] && files="$(grep -v "${IGNORE}" <<< "${files}" || true)"
 		dirs="$(find "${PORT_ETC}/${x}/" -type d 2>/dev/null || true)"
 		[[ -n "${IGNORE}" ]] && dirs="$(grep -v "${IGNORE}" <<< "${dirs}" || true)"
 		[[ -n "${files}" || -n "${dirs}" ]] || break
 
-		while read file;do
-			atom="$(qatom "${file}")"
-			atom="$(sed -e '/^$/d' <<< "${atom}")"
-			while read category pn ver rev slot;do
-				[[ "${category}" == "(null)" || "${pn}" == "(null)" ]] && continue
-				[[ "${ver}" == "(null)" ]] && ver="${ver//(null)/}"
-				if [[ -n "${rev}" ]] && ! grep -q \: <<< "${rev}";then
-					full_ver="${ver}-${rev}"
+		while read -r file;do
+			[[ -z "${file}" ]] && continue
+			# Reparse the file name with qatom -F (pipe-separated, non-whitespace
+			# IFS) -- the same idiom as package_envs.  The default whitespace qatom
+			# output collapses the empty PR column, so a `<cat>/<pn>:slot` name's
+			# slot slid into the rev field WITHOUT a colon and the slot branch
+			# below never ran; "<unset>" (not "(null)") is modern qatom's
+			# missing-PV placeholder.
+			while IFS='|' read -r category pn pv pr slot;do
+				[[ -z "${category}" || "${category}" == "(null)" ]] && continue
+				[[ -z "${pn}" || "${pn}" == "(null)" ]] && continue
+				[[ "${pv}" == "<unset>" ]] && pv=""
+				if [[ -n "${pv}" && -n "${pr}" ]];then
+					full_ver="${pv}-${pr}"
 				else
-					full_ver="${ver}"
+					full_ver="${pv}"
 				fi
 
-				[[ -n "${rev}" && -z "${slot}" ]] && grep -q \: <<< "${rev}" && slot="${rev}"
-				slot="${slot#:}"
-
-				if [[ -z "${ver}" && -z "${slot}" ]];then
+				if [[ -z "${pv}" && -z "${slot}" ]];then
+					# No version, no slot: any installed version satisfies it.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}"-[0-9]* &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
 					fi
-				fi
-
-				if [[ -n "${ver}" && -z "${slot}" ]] ;then
+				elif [[ -n "${pv}" && -z "${slot}" ]];then
+					# Pinned version must be installed.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}-${full_ver}" &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}-${full_ver}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
 					fi
-				fi
-
-				if [[ -z "${ver}" && -n "${slot}" ]] ;then
-					if [[ -z "$(cat "${PKGDB}/${category}/${pn}"-[0-9]*/SLOT 2>/dev/null | grep "${slot}" || true)" ]];then
+				elif [[ -z "${pv}" && -n "${slot}" ]];then
+					# Some installed version must occupy the EXACT main slot.  A
+					# SLOT file may carry a subslot (MAIN/SUB) -- compare MAIN only;
+					# the old `grep "${slot}"` was a loose substring match.
+					slot_found=""
+					for _sf in "${PKGDB}/${category}/${pn}"-[0-9]*/SLOT;do
+						[[ -f "${_sf}" ]] || continue
+						_s="$(< "${_sf}")"
+						if [[ "${_s%%/*}" == "${slot}" ]];then slot_found=1; break;fi
+					done
+					if [[ -z "${slot_found}" ]];then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}:${slot}${restore}"
 						RM+="${PORT_ETC}/${x}/${file}%"
 						eend $? 2>/dev/null
 					fi
 				fi
-			done <<< "${atom}"
+			done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]' "${file}" 2>/dev/null || true)"
 		done <<< "${files}"
 
 		while IFS='%' read -r target; do
