@@ -544,7 +544,14 @@ world_restore(){
 diff_ask(){
 	full_diff=""
 	_changes_seen=1
-	my_diff="$(diff "${1}" "${2}" | grep --color=never "[[:digit:]][a-z][[:digit:]]" || true)"
+	# Match only diff(1) NORMAL-format hunk headers (`3c3`, `2,4d1`, `0a5,7`):
+	# anchored to a whole line of `<range><acd><range>`.  The old unanchored
+	# `[[:digit:]][a-z][[:digit:]]` also caught CONTENT lines (which diff prefixes
+	# with `< `/`> `) that merely contained a digit-letter-digit run — a removed
+	# atom like `4d5` would then be re-parsed as a hunk header and feed garbage
+	# line numbers into the preview.  Apply is a whole-file mv and was unaffected;
+	# this only cleans up the displayed diff.
+	my_diff="$(diff "${1}" "${2}" | grep --color=never "^[0-9][0-9,]*[acd][0-9][0-9,]*$" || true)"
 	if [[ -n "${my_diff}" ]];then
 		_changes_found=$(( _changes_found + 1 ))
 		while read subj;do

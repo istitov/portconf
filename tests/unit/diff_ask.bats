@@ -91,6 +91,24 @@ _write_files() {
 	assert_output "app-misc/baz qux"
 }
 
+# --- hunk-filter only matches real headers, not header-shaped content ---
+
+@test "diff_ask: a content line shaped like a hunk header doesn't corrupt the preview" {
+	# `4d5` looks exactly like a diff hunk header.  The old unanchored filter
+	# matched the CONTENT line `< 4d5` too and re-parsed it, running a stray
+	# `seq < 4` that errored ("seq: invalid floating point argument") mid-
+	# preview — under set -e that aborts the run.  The anchored filter ignores
+	# content lines (diff prefixes them with `< `/`> `), so the change applies
+	# cleanly and no seq error leaks.
+	printf '%s\n' "keep" "4d5" > "${_f1}"
+	printf '%s\n' "keep" "zzz" > "${_f2}"
+	yes="1"; PRETEND=""
+	run diff_ask "${_f1}" "${_f2}"
+	[ "$status" -eq 0 ]
+	[[ "${output}" != *"seq:"* ]]
+	[[ "$(cat "${_f1}")" == "$(printf 'keep\nzzz')" ]]
+}
+
 # --- PRETEND=1 discard ---
 
 @test "diff_ask: PRETEND=1 — original unchanged" {
