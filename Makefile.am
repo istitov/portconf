@@ -51,6 +51,7 @@ EXTRA_DIST = \
 	tests/integration/regen_world.bats \
 	tests/integration/package_env.bats \
 	tests/integration/env_not_installed.bats \
+	tests/integration/not_if.bats \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats \

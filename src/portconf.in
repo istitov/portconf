@@ -1208,7 +1208,14 @@ not_if(){
 				sw="$(grep -o "[<>=~]" <<< "${category}" | tr -d $'\n' || true)"
 				category="${category##${sw}}"
 
-				[[ "${category}" == "(null)" || "${pn}" == "(null)" ]] && continue
+				# Modern qatom (portage-utils 0.97+) emits "<unset>" -- not the
+				# legacy "(null)" -- for a missing category/PN (a blank or
+				# categoryless package.* line).  Skip both spellings; otherwise
+				# the entry is probed as "<unset>/<unset>" and printed as a bogus
+				# "Not installed <unset>/..." line (the word-boundary-anchored sed
+				# can never match "<unset>", so it is pure noise, not a removal).
+				[[ "${category}" == "(null)" || "${category}" == "<unset>" ]] && continue
+				[[ "${pn}" == "(null)" || "${pn}" == "<unset>" ]] && continue
 
 				if [[ -n "${rev}" ]] && [[ -z "${slot}" ]] && grep -q \: <<< "${rev}";then
 					slot="${rev}"
