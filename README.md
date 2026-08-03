@@ -11,8 +11,8 @@ Currently maintained by [istitov](https://github.com/istitov/portconf).
 Version 2.0.0 marked the first release of the maintained fork: a thorough
 modernisation of the inherited script with an autotools build system,
 env-overridable system paths for sandboxing, and 15 latent bugs fixed.  The
-current tree is protected by a 455-test suite across four tiers (277 unit / 107
-integration / 52 smoke / 19 property).
+current tree is protected by a 456-test suite across four tiers (277 unit / 107
+integration / 53 smoke / 19 property).
 See [`ChangeLog`](ChangeLog) for the full breakdown.
 
 The 2.0.0 modernization was carried out with heavy use of the Claude
@@ -114,9 +114,12 @@ Edit `/etc/portconf.conf`:
 # Skip these package names
 # IGNORE_PN=""
 
-# Default options prepended to every run
+# Default options prepended to every non-empty invocation
 PORTCONF_DEFAULT_OPTS="-rc"
 ```
+
+Invoking `portconf` without arguments always prints help and exits; configured
+defaults are considered only when at least one command-line option is present.
 
 The config-file path itself honors the `PORTCONF_CONF` env var; see below.
 

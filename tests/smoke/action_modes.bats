@@ -104,6 +104,20 @@ _run_mode() {
 	assert_output_contains 'Usage: portconf'
 }
 
+@test "action mode: no arguments ignore mutating configured defaults" {
+	_write_commented_fixture
+	local conf="${SMOKE_PORT_ETC}/portconf.conf"
+	printf 'PORTCONF_DEFAULT_OPTS="--force -c"\n' > "${conf}"
+	run env \
+		PORT_ETC="${SMOKE_PORT_ETC}" BRDIR="${SMOKE_BRDIR}" \
+		PKGDB="${SMOKE_PKGDB}" DEP_PATH="${SMOKE_DEP}" \
+		PORTCONF_CONF="${conf}" "${PORTCONF_BIN}"
+	[ "$status" -eq 0 ]
+	[[ "$(cat "${SMOKE_PORT_ETC}/package.use")" == $'# remove me\nsys-apps/grep static' ]]
+	_assert_no_backup
+	assert_output_contains 'Usage: portconf'
+}
+
 @test "action mode: --force does not collide with --force-trash" {
 	_run_mode --force-trash
 	[ "$status" -eq 0 ]

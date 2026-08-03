@@ -3359,6 +3359,13 @@ _acquire_write_lock(){
 # Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
+# A genuinely argument-free invocation is always informational.  In
+# particular, do not let a mutating PORTCONF_DEFAULT_OPTS turn `portconf`
+# (historically the help path) into an implicit apply operation.
+if [[ $# -eq 0 ]];then
+	help_pc
+	exit 0
+fi
 declare -a _default_opts=() _all_opts=() _dispatch_opts=() _run_opts=()
 if [[ -n "${PORTCONF_DEFAULT_OPTS:-}" ]];then
 	read -r -a _default_opts <<< "${PORTCONF_DEFAULT_OPTS//$'\n'/ }"
@@ -3444,12 +3451,9 @@ if _needs_eix "${_run_opts[@]}";then
 		eix_method
 	fi
 fi
-# Use $# instead of -z "${@}" — the latter relied on implicit array-
-# concatenation inside [[ ]] (worked, but tripped SC2199).
-# Only a genuinely empty command line prints help.  A mode-only invocation
-# (`-p`, `--ask`, `--force`, or legacy `-y`) remains the historical silent
-# no-op after its global token is removed from the dispatch list.
-[[ $# -eq 0 ]] && help_pc
+# A mode-only invocation (`-p`, `--ask`, `--force`, or legacy `-y`) remains
+# the historical silent no-op after its global token is removed from the
+# dispatch list.
 for OPT in "${_run_opts[@]}";do
 	case "${OPT}" in
 	--backup | -b ) backup;;

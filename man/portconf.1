@@ -184,8 +184,11 @@ Space-separated list of categories to skip (shell glob patterns accepted).
 Space-separated list of package names to skip.
 .TP
 .B PORTCONF_DEFAULT_OPTS
-Default options prepended to every invocation (default:
+Default options prepended to every invocation that has at least one explicit
+command-line option (default:
 .BR \-rc ).
+An argument-free invocation always prints help without running configured
+defaults.
 .SH FILES
 .TP
 .I /etc/portconf.conf

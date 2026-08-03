@@ -30,6 +30,9 @@
 	  -? no longer expand against names in the working directory.
 	* --help and --version terminate during preflight, before any earlier
 	  mutating option can create a backup or alter configuration.
+	* An argument-free invocation is help-only even when
+	  PORTCONF_DEFAULT_OPTS contains a mutating action; defaults still prepend
+	  to every invocation carrying an explicit command-line option.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as
