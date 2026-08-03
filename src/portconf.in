@@ -255,6 +255,49 @@ _mktemp_near() {
 	printf '%s\n' "${f}"
 }
 
+# Install rewritten file CONTENT at TARGET without replacing TARGET's access
+# policy with mktemp's 0600/default ownership.  The final rename stays on the
+# target filesystem.  GNU cp's mode preservation also carries POSIX ACLs where
+# supported; xattrs/security labels are copied best-effort because kernels may
+# expose labels (for example SMACK64) that even the file owner cannot set.
+_install_rewrite() {
+	local target="$1" content="$2" staged
+	staged="$(_mktemp_near "${target}")" || return 1
+	cp -- "${content}" "${staged}" || return 1
+	if [[ -e "${target}" || -L "${target}" ]];then
+		cp --attributes-only --preserve=mode,ownership -- "${target}" "${staged}" || return 1
+		cp --attributes-only --preserve=xattr -- "${target}" "${staged}" 2>/dev/null || true
+	else
+		chmod 0644 "${staged}" || return 1
+	fi
+	mv -- "${staged}" "${target}" || return 1
+	rm -f -- "${content}"
+}
+
+# Preserve ownership while mapping permissions across a file<->directory
+# conversion.  Read access to a flat file gains the corresponding directory
+# search bit; converting back clears search/execute bits.  Generated fragment
+# files retain the original flat file's mode, owner, ACLs, and available xattrs.
+_prepare_conversion_metadata() {
+	local source="$1" desired="$2" direction="$3" raw_mode mode converted path
+	raw_mode="$(stat -c %a "${source}")" || return 1
+	mode=$(( 8#${raw_mode} ))
+	chown --reference="${source}" "${desired}" || return 1
+	if [[ "${direction}" == file_to_dir ]];then
+		converted=$(( (mode & 07777) | ((mode & 0444) >> 2) ))
+		printf -v converted '%04o' "${converted}"
+		chmod "${converted}" "${desired}" || return 1
+		while IFS= read -r -d '' path;do
+			cp --attributes-only --preserve=mode,ownership -- "${source}" "${path}" || return 1
+			cp --attributes-only --preserve=xattr -- "${source}" "${path}" 2>/dev/null || true
+		done < <(find "${desired}" -type f -print0)
+	else
+		converted=$(( mode & 06666 ))
+		printf -v converted '%04o' "${converted}"
+		chmod "${converted}" "${desired}" || return 1
+	fi
+}
+
 # Escape a string for use as the PATTERN in `sed s|pattern|repl|` with '|'
 # as the delimiter.  Handles backslash (must be first to avoid double-
 # escaping), the delimiter itself, and the basic-regex metacharacters
@@ -301,7 +344,7 @@ _drop_line() {
 			{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
 			t == v { next } { print }' "${f}" > "${tmp}"
 	fi
-	mv "${tmp}" "${f}"
+	_install_rewrite "${f}" "${tmp}"
 }
 
 # tput wrapper that no-ops when stdout isn't a TTY.  Cursor-control codes
@@ -850,7 +893,7 @@ restore(){
 	fi
 	printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
 	stage="$(_mktemp_near "${target}" dir)" || return 1
-	if ! tar --extract --file="${src}" --directory="${stage}" --no-same-owner --no-same-permissions 2>/dev/null;then
+	if ! tar --extract --file="${src}" --directory="${stage}" 2>/dev/null;then
 		printf '%b\n' "${red}Extract failed${restore} for ${answer}; live target unchanged"
 		return 1
 	fi
@@ -950,8 +993,7 @@ diff_ask(){
 						# not.  The old code refused every non-root user here
 						# ("go away" + exit 1) while the -y path did an
 						# unchecked mv -- the two now agree by just trying it.
-						if mv "${2}" "${1}" 2>/dev/null;then
-							chmod 0644 "${1}" 2>/dev/null
+						if _install_rewrite "${1}" "${2}" 2>/dev/null;then
 							_changes_applied=$(( _changes_applied + 1 ))
 							unset full_diff
 							return 0
@@ -974,8 +1016,7 @@ diff_ask(){
 			rm "${2}" 2>/dev/null
 			return 1
 		elif _action_is force;then
-			if mv "${2}" "${1}" 2>/dev/null;then
-				chmod 0644 "${1}" 2>/dev/null
+			if _install_rewrite "${1}" "${2}" 2>/dev/null;then
 				_changes_applied=$(( _changes_applied + 1 ))
 				unset full_diff
 				return 0
@@ -2020,7 +2061,7 @@ _prune_var_flags() {
 		}
 		{ print }
 	' "${file}" > "${tmp}"
-	mv "${tmp}" "${file}"
+	_install_rewrite "${file}" "${tmp}"
 }
 
 # invalid_uses_make: remove USE flags from make.conf not present in any known IUSE (per `eix --print-all-useflags`).
@@ -2263,6 +2304,7 @@ f_to_d(){
 				fi
 			done < "${package}"
 			set +f
+			_prepare_conversion_metadata "${package}" "${dir}" file_to_dir || return 1
 			convert_targets+=("${package}")
 			convert_stages+=("${dir}")
 		elif [[ -d "${package}" ]];then
@@ -2309,6 +2351,7 @@ d_to_f(){
 					return 1
 				fi
 			done < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
+			_prepare_conversion_metadata "${package}" "${tmp_file}" dir_to_file || return 1
 			convert_targets+=("${package}")
 			convert_stages+=("${tmp_file}")
 		elif [[ -f "${package}" ]];then
@@ -2326,7 +2369,6 @@ d_to_f(){
 	_txn_begin || return 1
 	for (( i=0; i<${#convert_targets[@]}; i++ ));do
 		_txn_replace "${convert_stages[i]}" "${convert_targets[i]}" || return 1
-		chmod 0644 "${convert_targets[i]}"
 	done
 	_txn_commit || return 1
 	_changes_applied=$(( _changes_applied + ${#convert_targets[@]} ))

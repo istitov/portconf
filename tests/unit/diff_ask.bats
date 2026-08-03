@@ -3,7 +3,7 @@
 #
 # diff_ask FILE TMPFILE computes a colourised diff and, depending on the
 # globals `yes` and `PRETEND`:
-#   yes=1, PRETEND=""   → auto-apply  (mv TMPFILE → FILE; chmod 0644)
+#   yes=1, PRETEND=""   → auto-apply  (same-filesystem metadata-preserving swap)
 #   yes="", PRETEND=1   → discard     (rm TMPFILE; FILE unchanged)
 #   both empty          → interactive prompt (read x; Yes/No/reprompt)
 #
@@ -71,6 +71,31 @@ _write_files() {
 	yes="1"; PRETEND=""
 	diff_ask "${_f1}" "${_f2}"
 	[[ ! -f "${_f2}" ]]
+}
+
+@test "diff_ask: apply preserves mode, owner, and group" {
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	chmod 0640 "${_f1}"
+	local before
+	before="$(stat -c '%a:%u:%g' "${_f1}")"
+	yes="1"; PRETEND=""
+	diff_ask "${_f1}" "${_f2}"
+	[[ "$(stat -c '%a:%u:%g' "${_f1}")" == "${before}" ]]
+	[[ "$(cat "${_f1}")" == 'new' ]]
+}
+
+@test "diff_ask: apply preserves user extended attributes when supported" {
+	command -v setfattr >/dev/null || skip "setfattr unavailable"
+	command -v getfattr >/dev/null || skip "getfattr unavailable"
+	printf '%s\n' "old" > "${_f1}"
+	printf '%s\n' "new" > "${_f2}"
+	setfattr -n user.portconf-test -v keep "${_f1}" 2>/dev/null \
+		|| skip "test filesystem has no user xattr support"
+	yes="1"; PRETEND=""
+	diff_ask "${_f1}" "${_f2}"
+	run getfattr --absolute-names --only-values -n user.portconf-test "${_f1}"
+	assert_output 'keep'
 }
 
 @test "diff_ask: yes=1 — addition of new line" {

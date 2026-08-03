@@ -59,6 +59,8 @@ run.  The historical -y / --yes option remains an alias for --force.
 Destructive multi-step operations stage replacements beside their targets and
 roll back the batch on ordinary failures.  Restore archives are validated and
 extracted into staging before any live path is replaced.
+Ordinary rewrites preserve access metadata; file/directory conversions map the
+existing permissions and ownership onto the new layout.
 
 
 Running the test suite

@@ -85,6 +85,10 @@ Mutating `--ask` and `--force` runs also hold an exclusive advisory lock at
 interleaving their backups or undo journals.  Dry-runs and read-only queries do
 not take the lock.
 
+Rewritten files retain their existing permissions, ownership, ACL-compatible
+mode metadata, and supported extended attributes.  Layout conversions map the
+same access policy between file and directory forms instead of forcing `0644`.
+
 ---
 
 ## Options

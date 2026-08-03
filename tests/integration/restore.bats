@@ -260,3 +260,21 @@ load 'test_helper'
 	[ ! -e "${PORT_ETC}/new-file" ]
 	rm -rf "${TEST_ROOT}"
 }
+
+@test "etc_restore: restores archived file and directory permissions" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage/private"
+	printf 'KEEP\n' > "${TEST_ROOT}/staging/portage/private/secret"
+	chmod 0750 "${TEST_ROOT}/staging/portage/private"
+	chmod 0600 "${TEST_ROOT}/staging/portage/private/secret"
+	tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	etc_restore <<< "1"
+	[[ "$(stat -c %a "${PORT_ETC}/private")" == '750' ]]
+	[[ "$(stat -c %a "${PORT_ETC}/private/secret")" == '600' ]]
+	rm -rf "${TEST_ROOT}"
+}

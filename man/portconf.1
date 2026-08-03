@@ -35,6 +35,10 @@ Applying runs hold an exclusive advisory lock at
 .IR /var/lib/portconf/.portconf.lock .
 If another applying process owns the lock, portconf exits without changing
 state.  Dry-runs and read-only queries do not acquire it.
+.PP
+Rewritten files preserve their existing access metadata.  File/directory
+layout conversions map permissions and ownership onto the new representation
+instead of resetting every generated file to mode 0644.
 .SH OPTIONS
 .SS Common
 .TP

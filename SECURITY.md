@@ -49,6 +49,10 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
   interleave backups, live replacements, or undo journals.  Applying runs use
   one exclusive lock; dry-runs and read-only queries remain lock-free.
 
+- **Access-metadata regression** — rewriting a protected configuration file
+  must not silently broaden its mode or change its owner/group.  Supported ACL
+  and extended-attribute metadata should survive ordinary file rewrites.
+
 - **`qatom -F` re-parse drift** — silent misclassification of mask
   atoms when a future `portage-utils` reshuffles the `qatom` output
   format.  The 2.0.0 `7e5ccd7` (`package_envs` modernised for qatom

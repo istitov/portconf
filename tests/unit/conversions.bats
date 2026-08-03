@@ -38,6 +38,18 @@ teardown() {
 	[[ -d "${TEST_PORT_ETC}/package.use" ]]
 }
 
+@test "f_to_d: maps file access metadata onto the directory and fragments" {
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
+	chmod 0640 "${TEST_PORT_ETC}/package.use"
+	local owner
+	owner="$(stat -c '%u:%g' "${TEST_PORT_ETC}/package.use")"
+	f_to_d
+	[[ "$(stat -c %a "${TEST_PORT_ETC}/package.use")" == '750' ]]
+	[[ "$(stat -c '%u:%g' "${TEST_PORT_ETC}/package.use")" == "${owner}" ]]
+	[[ "$(stat -c %a "${TEST_PORT_ETC}/package.use/app-misc")" == '640' ]]
+	[[ "$(stat -c '%u:%g' "${TEST_PORT_ETC}/package.use/app-misc")" == "${owner}" ]]
+}
+
 @test "f_to_d: atom filed under its category" {
 	printf '%s\n' "app-misc/foo bar baz" > "${TEST_PORT_ETC}/package.use"
 	f_to_d
@@ -122,6 +134,17 @@ teardown() {
 	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use/app-misc"
 	d_to_f
 	[[ ! -d "${TEST_PORT_ETC}/package.use" ]]
+}
+
+@test "d_to_f: maps directory access metadata onto the flat file" {
+	mkdir -p "${TEST_PORT_ETC}/package.use"
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use/app-misc"
+	chmod 0750 "${TEST_PORT_ETC}/package.use"
+	local owner
+	owner="$(stat -c '%u:%g' "${TEST_PORT_ETC}/package.use")"
+	d_to_f
+	[[ "$(stat -c %a "${TEST_PORT_ETC}/package.use")" == '640' ]]
+	[[ "$(stat -c '%u:%g' "${TEST_PORT_ETC}/package.use")" == "${owner}" ]]
 }
 
 @test "d_to_f: single sub-file content preserved" {
