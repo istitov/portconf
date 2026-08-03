@@ -30,6 +30,11 @@ restores, and repository cleanup before the command returns.  Backup archives
 are verified before publication and rotation.  Restore archives are rejected
 unless all members remain inside the expected target root and use supported
 file types.
+.PP
+Applying runs hold an exclusive advisory lock at
+.IR /var/lib/portconf/.portconf.lock .
+If another applying process owns the lock, portconf exits without changing
+state.  Dry-runs and read-only queries do not acquire it.
 .SH OPTIONS
 .SS Common
 .TP
@@ -191,6 +196,7 @@ Directory where timestamped backups are stored.
 .B portconf
 requires
 .BR bash (1),
+.BR flock (1),
 .BR eix (1),
 .BR qlist (1),
 .BR qatom (1),
@@ -206,6 +212,9 @@ and
 .BR versionsort (1)
 are all part of
 .BR app-portage/portage-utils .
+.BR flock (1)
+is provided by
+.BR sys-apps/util-linux .
 .BR agrep (1)
 is provided by
 .B dev-libs/tre

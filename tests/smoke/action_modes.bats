@@ -17,7 +17,7 @@ _write_commented_fixture() {
 }
 
 _assert_no_backup() {
-	[[ -z "$(find "${SMOKE_BRDIR}" -mindepth 1 -print -quit)" ]]
+	[[ -z "$(find "${SMOKE_BRDIR}" -type f -name '*.tar.bz2' -print -quit)" ]]
 }
 
 _run_mode() {
@@ -48,7 +48,22 @@ _run_mode() {
 		"${PORTCONF_BIN}" --ask -c <<< $'Yes\n'
 	[ "$status" -eq 0 ]
 	[[ "$(cat "${SMOKE_PORT_ETC}/package.use")" == 'sys-apps/grep static' ]]
-	[[ -n "$(find "${SMOKE_BRDIR}" -mindepth 1 -print -quit)" ]]
+	[[ -n "$(find "${SMOKE_BRDIR}" -type f -name 'portage_*.tar.bz2' -print -quit)" ]]
+}
+
+@test "action mode: concurrent apply is rejected while dry-run remains available" {
+	_write_commented_fixture
+	local lock_file="${SMOKE_BRDIR}/.portconf.lock"
+	exec 8>>"${lock_file}"
+	flock -n 8
+	_run_mode --force -c </dev/null
+	[ "$status" -ne 0 ]
+	assert_output_contains 'another applying process is already running'
+	[[ "$(cat "${SMOKE_PORT_ETC}/package.use")" == $'# remove me\nsys-apps/grep static' ]]
+	_run_mode -c
+	[ "$status" -eq 0 ]
+	[[ "$(cat "${SMOKE_PORT_ETC}/package.use")" == $'# remove me\nsys-apps/grep static' ]]
+	exec 8>&-
 }
 
 @test "action mode: --force applies without reading stdin" {

@@ -354,6 +354,8 @@ _changes_seen=""
 _changes_found=0
 _changes_applied=0
 eix_cache=""
+_write_lock_fd=""
+_write_lock_path=""
 IGNORE_CATEGORY=""
 IGNORE_PN=""
 COUNT=""
@@ -3235,6 +3237,60 @@ _needs_eix(){
 	done
 	return 1
 }
+
+# Mutating dispatch flags need an exclusive process lock in apply modes.  Keep
+# read-only profile/help/version operations and mode-only invocations lock-free.
+_needs_write_lock(){
+	local opt
+	for opt in ${1};do
+		case "${opt}" in
+			--backup|-b|--restore|-r|--sort|-s|\
+			--use-sort|-us|--use-invalid|-ui|--use-make|-um|\
+			--stupid-use-profile|-sup|--use-full|-uf|\
+			--keyword-one|-ko|--keyword-uniq|-ku|\
+			--trash|-t|--stupid-mask|-sm|--stupid-unmask|-sum|\
+			--force-trash|-ft|--rm-comments|-c|--rm-all-comments|-ac|\
+			--full|-f|--files-2-dirs|-f2d|--dirs-2-files|-d2f|\
+			--world-backup|-wb|--world-restore|-wr|--world-regen|-wg|\
+			--fix-repos|-fr) return 0;;
+		esac
+	done
+	return 1
+}
+
+# Hold an advisory lock for the lifetime of an applying process.  The lock file
+# is persistent by design: unlinking it on exit would let a third process lock a
+# new inode while a queued process still holds the old one.  BRDIR is already
+# portconf-owned state and can be redirected for chroots/tests; an explicit
+# PORTCONF_LOCK_FILE override is available when several roots must share a lock.
+_acquire_write_lock(){
+	local lock_parent
+	_write_lock_path="${PORTCONF_LOCK_FILE:-${BRDIR}/.portconf.lock}"
+	lock_parent="${_write_lock_path%/*}"
+	[[ "${lock_parent}" == "${_write_lock_path}" ]] && lock_parent="."
+	if ! command -v flock >/dev/null 2>&1;then
+		printf '%s\n' "portconf: applying changes requires flock (sys-apps/util-linux)" >&2
+		return 1
+	fi
+	if ! mkdir -p -- "${lock_parent}";then
+		printf '%s\n' "portconf: cannot create lock directory: ${lock_parent}" >&2
+		return 1
+	fi
+	if [[ -L "${_write_lock_path}" || ( -e "${_write_lock_path}" && ! -f "${_write_lock_path}" ) ]];then
+		printf '%s\n' "portconf: refusing unsafe lock path: ${_write_lock_path}" >&2
+		return 1
+	fi
+	if ! exec {_write_lock_fd}>>"${_write_lock_path}";then
+		printf '%s\n' "portconf: cannot open lock file: ${_write_lock_path}" >&2
+		return 1
+	fi
+	if ! flock -n "${_write_lock_fd}";then
+		printf '%s\n' "portconf: another applying process is already running (lock: ${_write_lock_path})" >&2
+		exec {_write_lock_fd}>&-
+		_write_lock_fd=""
+		return 1
+	fi
+}
 # Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
@@ -3275,6 +3331,11 @@ for _global_opt in ${opts};do
 	esac
 done
 opts="${_dispatch_opts}"
+# Acquire the writer lock before cache bootstrap or any dispatch handler can
+# touch shared state.  Pretend mode remains side-effect-free and lock-free.
+if ! _action_is pretend && _needs_write_lock "${opts}";then
+	_acquire_write_lock || exit 1
+fi
 # Save the dispatch-entry stdin on fd 9.  diff_ask / remove_ask read
 # Yes/No answers from fd 9 because most callers wrap them inside
 # `while ...; done < <(find ...)` loops (sort_uniq_files, file_or_dir's

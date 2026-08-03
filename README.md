@@ -80,6 +80,11 @@ roll back their whole batch on ordinary failures.  Backups are written and
 verified before publication, and retention rotation never deletes an older
 snapshot to make room for a failed new one.
 
+Mutating `--ask` and `--force` runs also hold an exclusive advisory lock at
+`/var/lib/portconf/.portconf.lock`, preventing concurrent writers from
+interleaving their backups or undo journals.  Dry-runs and read-only queries do
+not take the lock.
+
 ---
 
 ## Options

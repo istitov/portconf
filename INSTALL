@@ -46,6 +46,7 @@ portconf requires the following tools at runtime:
     app-portage/eix
     app-portage/portage-utils   (qlist, qatom)
     sys-apps/portage            (emerge, eselect)
+    sys-apps/util-linux         (flock)
 
 The -rc / --regen-cache option (strongly recommended) also requires eix-update.
 
@@ -109,6 +110,7 @@ or modify real system state.
     PKGDB         installed-package db root    (default: /var/db/pkg)
     WORLD         path to the world file       (default: /var/lib/portage/world)
     DEP_PATH      eix dep-cache root           (default: /var/cache/edb/dep)
+    PORTCONF_LOCK_FILE writer lock path         (default: BRDIR/.portconf.lock)
 
 These are primarily intended for the bats integration test harness to
 sandbox each function.  The legacy /etc/make.conf and /etc/make.profile

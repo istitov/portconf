@@ -45,6 +45,10 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
   incomplete restore, or only some selected repositories removed.  Backup
   creation failures must retain all previously published snapshots.
 
+- **Concurrent-writer bypass** — two applying portconf processes must not
+  interleave backups, live replacements, or undo journals.  Applying runs use
+  one exclusive lock; dry-runs and read-only queries remain lock-free.
+
 - **`qatom -F` re-parse drift** — silent misclassification of mask
   atoms when a future `portage-utils` reshuffles the `qatom` output
   format.  The 2.0.0 `7e5ccd7` (`package_envs` modernised for qatom

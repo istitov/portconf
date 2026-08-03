@@ -24,6 +24,7 @@ RDEPEND="
 	app-portage/portage-utils
 	dev-libs/tre
 	sys-apps/portage
+	sys-apps/util-linux
 	bash-completion? ( app-shells/bash-completion )
 "
 # Live builds start from a git checkout, not a `make dist` tarball, so
@@ -42,6 +43,7 @@ BDEPEND="
 		app-portage/portage-utils
 		dev-libs/tre
 		sys-apps/portage
+		sys-apps/util-linux
 	)
 "
 
