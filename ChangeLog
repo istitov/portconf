@@ -25,6 +25,9 @@
 	  checked against the test tree.
 	* Unknown options fail with usage status 2 during preflight validation,
 	  before an earlier valid option can perform work.
+	* CLI arguments remain exact array elements through mode resolution,
+	  validation, cache setup, and dispatch; wildcard-shaped options such as
+	  -? no longer expand against names in the working directory.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as

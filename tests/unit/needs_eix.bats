@@ -51,17 +51,17 @@ setup() {
 }
 
 @test "_needs_eix: true when a cache flag sits among non-cache tokens" {
-	_needs_eix "  -s -ku -sm -c "
+	_needs_eix -s -ku -sm -c
 }
 
 @test "_needs_eix: false for an all-clear set, a lone -rc, and the empty string" {
-	if _needs_eix "-s -us -ku -fr"; then echo "all-clear set wrongly matched" >&2; false; fi
+	if _needs_eix -s -us -ku -fr;   then echo "all-clear set wrongly matched" >&2; false; fi
 	if _needs_eix "-rc";            then echo "-rc alone wrongly matched"      >&2; false; fi
-	if _needs_eix "";              then echo "empty wrongly matched"          >&2; false; fi
+	if _needs_eix;                  then echo "empty wrongly matched"          >&2; false; fi
 }
 
 @test "_validate_dispatch_opts: accepts every dispatch option" {
-	_validate_dispatch_opts "
+	local -a options=(
 		-rc --regen-cache -b --backup -r --restore -s --sort
 		-us --use-sort -ui --use-invalid -um --use-make
 		-sup --stupid-use-profile -uf --use-full -ko --keyword-one
@@ -70,11 +70,13 @@ setup() {
 		-ac --rm-all-comments -f --full -f2d --files-2-dirs
 		-d2f --dirs-2-files -apu --all-profiles-use -pu --profiles-use
 		-cpu --current-profile-use -wb --world-backup -wr --world-restore
-		-wg --world-regen -fr --fix-repos -V --version -h --help -? h"
+		-wg --world-regen -fr --fix-repos -V --version -h --help '-?' h
+	)
+	_validate_dispatch_opts "${options[@]}"
 }
 
 @test "_validate_dispatch_opts: rejects an unknown option with usage status" {
-	run _validate_dispatch_opts "--sort --not-a-portconf-option --backup"
+	run _validate_dispatch_opts --sort --not-a-portconf-option --backup
 	[ "${status}" -eq 2 ]
 	[[ "${output}" == *'Unknown option: --not-a-portconf-option'* ]]
 }

@@ -3255,7 +3255,7 @@ OPTIONS must be separated by SPACE."
 # === dispatcher that calls the right combo of funcs for each user flag.
 # ============================================================================
 
-# _needs_eix OPTS: true when any whitespace-separated token in OPTS invokes a
+# _needs_eix OPT...: true when any argument invokes a
 # function that queries the eix PACKAGE cache (and thus needs eix_check/eix_method
 # to bootstrap it).  Word-exact per token, never a substring match: the old
 # multiline-`grep` table matched `-f` inside `-fr`/`-f2d` (needless bootstrap),
@@ -3269,7 +3269,7 @@ OPTIONS must be separated by SPACE."
 # whose `eix --print` reads a config var, not the package cache.
 _needs_eix(){
 	local opt
-	for opt in ${1};do
+	for opt in "$@";do
 		case "${opt}" in
 			--use-invalid|-ui|--use-full|-uf|\
 			--trash|-t|--force-trash|-ft|\
@@ -3284,7 +3284,7 @@ _needs_eix(){
 # read-only profile/help/version operations and mode-only invocations lock-free.
 _needs_write_lock(){
 	local opt
-	for opt in ${1};do
+	for opt in "$@";do
 		case "${opt}" in
 			--backup|-b|--restore|-r|--sort|-s|\
 			--use-sort|-us|--use-invalid|-ui|--use-make|-um|\
@@ -3305,7 +3305,7 @@ _needs_write_lock(){
 # valid options preceding it may already have changed the live configuration.
 _validate_dispatch_opts(){
 	local opt
-	for opt in ${1};do
+	for opt in "$@";do
 		case "${opt}" in
 			--regen-cache|-rc|--backup|-b|--restore|-r|--sort|-s|\
 			--use-sort|-us|--use-invalid|-ui|--use-make|-um|\
@@ -3359,14 +3359,18 @@ _acquire_write_lock(){
 # Sourcing guard: `source portconf.in` from tests sets PORTCONF_NO_MAIN=1
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
-opts=" ${PORTCONF_DEFAULT_OPTS:-} ${*}"
+declare -a _default_opts=() _all_opts=() _dispatch_opts=() _run_opts=()
+if [[ -n "${PORTCONF_DEFAULT_OPTS:-}" ]];then
+	read -r -a _default_opts <<< "${PORTCONF_DEFAULT_OPTS//$'\n'/ }"
+fi
+_all_opts=("${_default_opts[@]}" "$@")
 # Resolve exactly one action policy before any bootstrap helper can run.  An
 # explicit dry-run always wins, including the historically common `-p -y`.
 # Ask and force are contradictory apply policies and therefore fail clearly.
 _mode_p=""
 _mode_a=""
 _mode_f=""
-for _global_opt in ${opts};do
+for _global_opt in "${_all_opts[@]}";do
 	case "${_global_opt}" in
 		-p|--pretend) _mode_p=1 ;;
 		--ask) _mode_a=1 ;;
@@ -3385,26 +3389,24 @@ elif [[ -n "${_mode_f}" ]];then
 else
 	_set_action_mode pretend
 fi
-# Rebuild the dispatch string by exact tokens.  Regex-stripping `--force`
+# Build the dispatch array from exact tokens.  Regex-stripping `--force`
 # would also strip the prefix from `--force-trash`, turning it into the
 # unknown option `-trash`.
-_dispatch_opts=""
-for _global_opt in ${opts};do
+for _global_opt in "${_all_opts[@]}";do
 	case "${_global_opt}" in
 		-p|--pretend|--ask|-y|--yes|--force) ;;
-		*) _dispatch_opts+=" ${_global_opt}" ;;
+		*) _dispatch_opts+=("${_global_opt}") ;;
 	esac
 done
-opts="${_dispatch_opts}"
 # Validate the complete request before any option handler can have side
 # effects.  Status 2 follows the existing contradictory-mode usage error.
-if ! _validate_dispatch_opts "${opts}";then
+if ! _validate_dispatch_opts "${_dispatch_opts[@]}";then
 	help_pc >&2
 	exit 2
 fi
 # Acquire the writer lock before cache bootstrap or any dispatch handler can
 # touch shared state.  Pretend mode remains side-effect-free and lock-free.
-if ! _action_is pretend && _needs_write_lock "${opts}";then
+if ! _action_is pretend && _needs_write_lock "${_dispatch_opts[@]}";then
 	_acquire_write_lock || exit 1
 fi
 # Save the dispatch-entry stdin on fd 9.  diff_ask / remove_ask read
@@ -3419,15 +3421,19 @@ fi
 # channel — if we dup-ed onto 3 the unit tests would read bats's stream
 # instead of the test's heredoc-fed stdin.
 exec 9<&0
-if _needs_eix "${opts}";then
-	if grep -q -e " --regen-cache\>" -e " -rc\>" <<< " ${opts}";then
+_regen_cache=""
+for _global_opt in "${_dispatch_opts[@]}";do
+	case "${_global_opt}" in
+		--regen-cache|-rc) _regen_cache=1 ;;
+		*) _run_opts+=("${_global_opt}") ;;
+	esac
+done
+if _needs_eix "${_run_opts[@]}";then
+	if [[ -n "${_regen_cache}" ]];then
 		eix_check
-		opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
 	else
 		eix_method
 	fi
-else
-	opts="$(sed -e 's| --regen-cache\>||g;s| -rc\>||g' -e '/^[ \t]$/d' <<< " ${opts}")"
 fi
 # Use $# instead of -z "${@}" — the latter relied on implicit array-
 # concatenation inside [[ ]] (worked, but tripped SC2199).
@@ -3435,7 +3441,7 @@ fi
 # (`-p`, `--ask`, `--force`, or legacy `-y`) remains the historical silent
 # no-op after its global token is removed from the dispatch list.
 [[ $# -eq 0 ]] && help_pc
-for OPT in ${opts};do
+for OPT in "${_run_opts[@]}";do
 	case "${OPT}" in
 	--backup | -b ) backup;;
 	--restore | -r ) etc_restore;;

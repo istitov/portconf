@@ -26,6 +26,18 @@ load test_helper
 	assert_output_contains 'Usage: portconf'
 }
 
+@test "smoke: -? remains an exact help token when the cwd contains a glob match" {
+	local bin glob_dir="${BATS_TEST_TMPDIR}/option-glob"
+	bin="$(readlink -f "${PORTCONF_BIN}")"
+	mkdir "${glob_dir}"
+	touch -- "${glob_dir}/-x"
+	cd "${glob_dir}"
+	run env PORTCONF_CONF=/dev/null "${bin}" '-?'
+	[ "${status}" -eq 0 ]
+	assert_output_contains 'Usage: portconf'
+	[[ "${output}" != *'Unknown option'* ]]
+}
+
 @test "smoke: --version reports package version" {
 	run "${PORTCONF_BIN}" --version
 	[ "$status" -eq 0 ]
@@ -54,7 +66,7 @@ load test_helper
 }
 
 @test "smoke: -p alone is a no-op (silently exits 0)" {
-	# --pretend stripped from opts; resulting opts is whitespace, so the
+	# --pretend is stripped from the dispatch array, so the
 	# dispatch loop iterates zero times.  No /etc/portage touch, no output.
 	run "${PORTCONF_BIN}" -p
 	[ "$status" -eq 0 ]
