@@ -43,9 +43,9 @@ teardown() {
 	local before; before="$(cat "${PROP_PORT_ETC}/package.use")"
 	prop_apply -p -us
 	[ "${status}" -eq 0 ]
-	assert_output --partial 'pretend (-p)'
+	assert_output --partial 'dry-run'
 	assert_output --partial 'nothing written'
-	# pretend must not have touched the file
+	# Dry-run must not have touched the file.
 	run cat "${PROP_PORT_ETC}/package.use"
 	assert_output "${before}"
 }

@@ -15,6 +15,8 @@ load test_helper
 	[ "$status" -eq 0 ]
 	assert_output_contains 'Usage: portconf'
 	assert_output_contains '--regen-cache'
+	assert_output_contains '--ask'
+	assert_output_contains '--force'
 	assert_output_contains '--use-full'
 }
 

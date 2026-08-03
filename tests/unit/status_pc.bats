@@ -109,19 +109,19 @@ teardown() {
 @test "_status_pc: partial apply -> 'updated N, M still pending'" {
 	_changes_seen=1; _changes_found=5; _changes_applied=2; PRETEND=""
 	run _status_pc
-	assert_output "portconf: updated 2 file(s), 3 still pending (re-run with -y)"
+	assert_output "portconf: updated 2 file(s), 3 still pending (re-run with --ask or --force)"
 }
 
-@test "_status_pc: pending, none applied -> 're-run with -y'" {
+@test "_status_pc: pending, none applied -> names the apply modes" {
 	_changes_seen=1; _changes_found=4; _changes_applied=0; PRETEND=""
 	run _status_pc
-	assert_output "portconf: 4 file(s) have pending changes, none applied (re-run with -y)"
+	assert_output "portconf: 4 file(s) have pending changes, none applied (re-run with --ask or --force)"
 }
 
 @test "_status_pc: pretend with pending -> 'would change, nothing written'" {
 	_changes_seen=1; _changes_found=8; _changes_applied=0; PRETEND="1"
 	run _status_pc
-	assert_output "portconf: pretend (-p), 8 file(s) would change, nothing written"
+	assert_output "portconf: dry-run, 8 file(s) would change, nothing written"
 }
 
 @test "_status_pc: pretend with nothing found -> 'no changes needed'" {

@@ -36,8 +36,9 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
   in atom names; tar-side traversal via a crafted backup tarball; etc.
 
 - **`--pretend` bypass** — any code path that mutates state when `-p`
-  is in effect.  `backup()` running unconditionally is documented and
-  not a bypass; everything *downstream* of `backup()` is.
+  is in effect, or when neither `--ask` nor `--force` was supplied.
+  Dry-run covers all persistent state, including backup archives, restores,
+  layout conversions, overlay cleanup, and world-file operations.
 
 - **`qatom -F` re-parse drift** — silent misclassification of mask
   atoms when a future `portage-utils` reshuffles the `qatom` output
@@ -53,7 +54,7 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
 
 - "It removed my hand-edited line."  portconf sorts, dedupes, and
   rewrites the files it operates on; that's the feature, not a bug.
-  Use `--pretend` and inspect the diff before non-pretend runs.
+  Inspect the default dry-run diff before applying with `--ask` or `--force`.
 
 - Issues already fixed in the supported version.  Check the
   [`ChangeLog`](ChangeLog) before reporting.

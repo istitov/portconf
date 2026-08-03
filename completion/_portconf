@@ -11,12 +11,14 @@
 _portconf() {
 	local -a args
 	args=(
+		'(--force -y --yes)--ask[Apply with interactive confirmations]'
+		'(--ask -y --yes)--force[Apply all changes without prompting]'
 		'(-rc --regen-cache)'{-rc,--regen-cache}'[Create temporary eix cache; fix overlays]'
 		'(-b --backup)'{-b,--backup}'[Backup /etc/portage state]'
 		'(-r --restore)'{-r,--restore}'[Restore /etc/portage from a saved state]'
 		'(-s --sort)'{-s,--sort}'[Sort and deduplicate USE flags, keywords, package.* files, profile use.mask]'
-		'(-y --yes)'{-y,--yes}'[Answer yes to all prompts]'
-		'(-p --pretend)'{-p,--pretend}'[Check only; make no changes]'
+		'(--ask --force -y --yes)'{-y,--yes}'[Compatibility alias for --force]'
+		'(-p --pretend)'{-p,--pretend}'[Dry-run; make no persistent changes (default)]'
 		'(-V --version)'{-V,--version}'[Print version and exit]'
 		'(-h --help)'{-h,--help}'[Show help]'
 

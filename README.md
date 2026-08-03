@@ -56,23 +56,29 @@ smoke test layers, shellcheck, and `make distcheck` before landing.
 ## Quick start
 
 ```sh
-# Check only (no changes):
-portconf --pretend --full
-
-# Full cleanup with eix cache refresh (recommended):
+# Preview a full cleanup (dry-run is the default):
 portconf --regen-cache --full
+
+# Apply interactively after reviewing the preview:
+portconf --ask --regen-cache --full
+
+# Apply non-interactively (for automation):
+portconf --force --regen-cache --full
 ```
 
-Always start with `--pretend` to review the planned changes before letting
-portconf write anything.  Every mutating operation creates a backup tarball
-under `/var/lib/portconf/` first; use `portconf --restore` to roll back.
+Portconf is a dry-run unless `--ask` or `--force` is present.  `--pretend`
+(`-p`) remains available when scripts should state that policy explicitly;
+it also safely wins if combined with the legacy `-y` flag.  Applying
+configuration-cleanup operations creates a backup tarball under
+`/var/lib/portconf/` first; use `portconf --ask --restore` to select and roll
+back to one.  `--force --restore` selects the newest backup without prompting.
 
 ---
 
 ## Options
 
-See `portconf --help` or `man portconf` for the full option list (31 flags
-across 9 categories).  Tab-completion is provided for bash and zsh — see
+See `portconf --help` or `man portconf` for the full option list. Tab-completion
+is provided for bash and zsh — see
 [`INSTALL`](INSTALL) for the install paths.
 
 ---

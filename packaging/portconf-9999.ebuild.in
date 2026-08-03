@@ -81,7 +81,7 @@ pkg_postinst() {
 	elog "Or always pass --regen-cache (-rc) to portconf to build a"
 	elog "throwaway cache per run:"
 	elog ""
-	elog "    portconf -rc --use-full      # or any other -rc combination"
+	elog "    portconf --ask -rc --use-full # omit --ask to preview only"
 	elog ""
 	elog "See \`man portconf\` for the full option set."
 }

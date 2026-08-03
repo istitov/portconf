@@ -157,6 +157,11 @@ DEP_PATH="${DEP_PATH:-/var/cache/edb/dep}"
 ARCH="$(eix --print DEFAULT_ARCH)"
 yes=""
 PRETEND=""
+# Central action mode.  The main dispatcher always sets this before invoking
+# any operation.  It remains empty while the file is sourced with
+# PORTCONF_NO_MAIN so the long-standing yes/PRETEND test controls keep working.
+# Valid runtime values: pretend (default), ask, force.
+ACTION_MODE=""
 # Mutation tallies for the end-of-run status line (_status_pc, printed after
 # the dispatch loop): _changes_seen marks that a mutating op ran at all,
 # _changes_found counts files with a pending diff, _changes_applied the ones
@@ -190,6 +195,56 @@ ${IGNORE_PN}"
 	IGNORE="${IGNORE:-'Hello, LOR! :3'}"
 }
 _compute_ignore
+
+# Set and query the process-wide action mode.  Keep the legacy globals in sync:
+# a number of functions and external source-based users historically set
+# yes/PRETEND directly, so _action_is falls back to them when ACTION_MODE is
+# empty.  This preserves that API while giving real CLI invocations one
+# authoritative policy.
+_set_action_mode() {
+	ACTION_MODE="$1"
+	case "${ACTION_MODE}" in
+		pretend) PRETEND=1; yes="" ;;
+		ask)    PRETEND=""; yes="" ;;
+		force)  PRETEND=""; yes=1 ;;
+		*) printf '%s\n' "internal error: invalid action mode: ${ACTION_MODE}" >&2; return 2 ;;
+	esac
+}
+
+_action_is() {
+	local current="${ACTION_MODE:-}"
+	if [[ -z "${current}" ]]; then
+		if [[ -n "${PRETEND:-}" ]]; then
+			current="pretend"
+		elif [[ -n "${yes:-}" ]]; then
+			current="force"
+		else
+			current="ask"
+		fi
+	fi
+	[[ "${current}" == "$1" ]]
+}
+
+# Confirm a direct (non-diff) mutation.  Diff-based rewrites use diff_ask and
+# removals use remove_ask; conversion/overlay helpers use this shared gate so
+# they obey the same process-wide policy.  Return 0 only when applying is
+# authorized.
+_confirm_action() {
+	local subject="$1" answer _ans_fd=9
+	_action_is force && return 0
+	_action_is pretend && return 1
+	{ : <&9; } 2>/dev/null || _ans_fd=0
+	printf '%b' "${contrast}${subject}${restore} [${green}Yes${restore}/${red}No${restore}] "
+	while read -r -u "${_ans_fd}" answer;do
+		case "${answer}" in
+			Yes|YES|yes|Y|y|"") return 0 ;;
+			No|NO|no|N|n) return 1 ;;
+			*) printf '%b' "Sorry, response '${answer}' not understood. [${green}Yes${restore}/${red}No${restore}] " ;;
+		esac
+	done
+	printf '%b\n' "\n${red}No answer read${restore}; nothing applied"
+	return 1
+}
 # ============================================================================
 # === PROFILE RESOLUTION
 # === Resolves /etc/make.profile -> effective profile USE flags.
@@ -324,6 +379,10 @@ timestamp(){
 
 # repo_fix: merge declared overlays' categories into Portage's view for this run.
 repo_fix(){
+	# eix_check historically created profiles/categories inside overlay trees,
+	# even for --pretend.  A dry run may create disposable files under /tmp,
+	# but it must not touch any configured system/repository root.
+	_action_is pretend && return 0
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
 			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u || true)"
@@ -366,16 +425,20 @@ eix_check(){
 	fi
 	rm_repo_fix
 }
-# eix_method: reuse the host's eix cache, prompting if a rebuild is needed.
+# eix_method: reuse the host's eix cache, rebuilding or prompting according to
+# the process-wide action mode when its configuration is unsuitable.
 eix_method(){
 	if [[ -n "$(eix --version 2>/dev/null)" ]];then
 		if [[ "$(eix --print OVERLAY_CACHE_METHOD)" != "parse|ebuild*" ]];then
-			# -y: build the temp cache straight away and RETURN.  Returning is
+			# Force: build the temp cache straight away and RETURN.  Returning is
 			# what keeps the run out of the prompt loop below, where a bare
 			# `read x` would consume a line meant for a later diff_ask and a
 			# "" / "Yes" answer would bootstrap the cache a second time.
-			if [[ -n "${yes}" ]];then
+			if _action_is force;then
 				eix_check
+				return
+			elif _action_is pretend;then
+				printf '%b\n' "${contrast}Dry-run:${restore} using the existing eix cache; pass -rc to build a temporary fresh cache."
 				return
 			fi
 			printf '%b' "\n${red}!default 'OVERLAY_CACHE_METHOD'${restore}${contrast}\nCreate temporary cache?${restore} [${green}Yes${restore}/${red}No${restore}] "
@@ -400,12 +463,16 @@ eix_method(){
 # ============================================================================
 # === BACKUP & RESTORE
 # === backup, world_backup, restore, etc_restore, world_restore.
-# === backup() runs unconditionally for every mutating arm (PRETEND gates the
-# === downstream ops, not backup itself).  Snapshots land in $BRDIR.
+# === backup() is called by mutating arms and obeys the central action mode.
+# === Snapshots land in $BRDIR only when changes are authorized.
 # ============================================================================
 
-# backup: tar $PORT_ETC to $BRDIR with rotation; called by every mutating flag (incl. under --pretend).
+# backup: tar $PORT_ETC to $BRDIR with rotation; dry-run only reports intent.
 backup(){
+	if _action_is pretend;then
+		printf '%b\n' "${PORT_ETC} backup: ${contrast}dry-run${restore}, no archive written"
+		return 0
+	fi
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
 	tarballs="$(ls -1 --color=never "${BRDIR}")"
 	oldest="$(head -n1 <<< "${tarballs}")"
@@ -455,6 +522,10 @@ backup(){
 }
 # world_backup: tar the world file to $BRDIR/world/ with rotation; idempotent on no-change.
 world_backup(){
+	if _action_is pretend;then
+		printf '%b\n' "world backup: ${contrast}dry-run${restore}, no archive written"
+		return 0
+	fi
 	world_dir="${BRDIR}/world"
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
 	tarballs="$(ls -1 --color=never "${world_dir}")"
@@ -492,36 +563,49 @@ restore(){
 	tarballs="${tarballs//${1}\/}"
 	tarballs="${tarballs//.tar.bz2/}"
 	tarballs="${tarballs//${2}_/}"
-	PS3="$(printf '%b\n' "${contrast}Choose number:${restore} ")"
+	if _action_is pretend;then
+		printf '%b\n' "${contrast}Available backups${restore}:"
+		printf '%s\n' ${tarballs}
+		printf '%b\n' "${contrast}portconf:${restore} dry-run, no restore performed"
+		return 0
+	fi
 	printf '%b\n' "${contrast}Available backups${restore}:"
-	select answer in ${tarballs};do
-		# An out-of-range / non-numeric choice leaves ${answer} empty; re-prompt
-		# instead of falling through and wiping the target with nothing to put
-		# back.
-		[[ -z "${answer}" ]] && { printf '%b\n' "${red}Invalid choice${restore}"; continue; }
-		src="${1}/${2}_${answer}.tar.bz2"
-		# Validate the archive BEFORE touching the live tree.  The old code
-		# wiped $5 first and swallowed a failed extract, so a corrupt/truncated
-		# tarball left the target EMPTY with no way back.  `tar -t` it first and
-		# bail untouched on failure.
-		if ! tar -tf "${src}" >/dev/null 2>&1;then
-			printf '%b\n' "${red}Backup ${answer} is unreadable or corrupt${restore}; nothing changed"
-			return 1
-		fi
-		printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
-		# $5 (optional) is the dir whose CONTENTS are wiped before extracting
-		# (so the restore is authoritative -- leftover files don't survive).
-		# find -delete handles an empty dir + weird names; ${5:-} is required
-		# under set -u for the 4-arg (world_restore) callers.
-		[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
-		if tar -xf "${src}" -C "${4}" 2>/dev/null;then
-			eend 0 2>/dev/null
-		else
-			printf '%b\n' "${red}Extract failed${restore} for ${answer} (target may be incomplete)"
-			eend 1 2>/dev/null
-		fi
-		break
-	done
+	if [[ "${ACTION_MODE:-}" == "force" ]];then
+		# Backup names contain sortable timestamps; force restores the newest
+		# snapshot so the mode remains genuinely non-interactive.
+		answer="$(tail -n1 <<< "${tarballs}")"
+		printf '%b\n' "Selecting newest backup: ${green}${answer}${restore}"
+	else
+		PS3="$(printf '%b\n' "${contrast}Choose number:${restore} ")"
+		select answer in ${tarballs};do
+			# An out-of-range / non-numeric choice leaves ${answer} empty; re-prompt
+			# instead of falling through and wiping the target with nothing to put
+			# back.
+			[[ -z "${answer}" ]] && { printf '%b\n' "${red}Invalid choice${restore}"; continue; }
+			break
+		done
+	fi
+	src="${1}/${2}_${answer}.tar.bz2"
+	# Validate the archive BEFORE touching the live tree.  The old code
+	# wiped $5 first and swallowed a failed extract, so a corrupt/truncated
+	# tarball left the target EMPTY with no way back.  `tar -t` it first and
+	# bail untouched on failure.
+	if ! tar -tf "${src}" >/dev/null 2>&1;then
+		printf '%b\n' "${red}Backup ${answer} is unreadable or corrupt${restore}; nothing changed"
+		return 1
+	fi
+	printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
+	# $5 (optional) is the dir whose CONTENTS are wiped before extracting
+	# (so the restore is authoritative -- leftover files don't survive).
+	# find -delete handles an empty dir + weird names; ${5:-} is required
+	# under set -u for the 4-arg (world_restore) callers.
+	[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
+	if tar -xf "${src}" -C "${4}" 2>/dev/null;then
+		eend 0 2>/dev/null
+	else
+		printf '%b\n' "${red}Extract failed${restore} for ${answer} (target may be incomplete)"
+		eend 1 2>/dev/null
+	fi
 }
 # etc_restore: wrapper — restore() applied to the /etc/portage snapshot set.
 etc_restore(){
@@ -582,7 +666,7 @@ diff_ask(){
 		echo "###############################################"
 		printf '%b\n' "${full_diff%\\n}" | column -s \^ -t
 		echo "###############################################"
-		if [[ -z "${yes}" && -z "${PRETEND}" ]];then
+		if _action_is ask;then
 			printf '%b' "${contrast}Apply changes?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			# Read the answer from fd 9 (dispatch-entry stdin, see top of
 			# DISPATCH).  Fall back to fd 0 when fd 9 isn't open — that
@@ -617,10 +701,10 @@ diff_ask(){
 			# read returned non-zero = EOF: stdin was not an interactive
 			# terminal and no answer was given.  Do NOT silently discard the
 			# pending change (the old behaviour looked like a clean no-op).
-			printf '%b\n' "\n${red}No answer read${restore} (stdin not an interactive terminal); nothing applied. Re-run with ${green}-y${restore} to apply non-interactively."
+			printf '%b\n' "\n${red}No answer read${restore} (stdin not an interactive terminal); nothing applied. Re-run with ${green}--force${restore} to apply non-interactively."
 			rm "${2}" 2>/dev/null
 			return 1
-		elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
+		elif _action_is force;then
 			if mv "${2}" "${1}" 2>/dev/null;then
 				chmod 0644 "${1}" 2>/dev/null
 				_changes_applied=$(( _changes_applied + 1 ))
@@ -630,7 +714,7 @@ diff_ask(){
 			printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 			rm "${2}" 2>/dev/null
 			return 1
-		elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
+		elif _action_is pretend;then
 			unset full_diff
 			rm "${2}" 2>/dev/null
 			return 0
@@ -646,7 +730,7 @@ remove_ask(){
 	# empty_files / not_found) ended with no end-of-run summary.
 	_changes_seen=1
 	_changes_found=$(( _changes_found + 1 ))
-	if [[ -z "${yes}" && -z "${PRETEND}" ]];then
+	if _action_is ask;then
 		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
 		# Same stdin reroute as diff_ask — see comment there.
 		local _ans_fd=9
@@ -663,11 +747,11 @@ remove_ask(){
 			esac
 		done
 		eend $? 2>/dev/null
-	elif [[ -n "${yes}" && -z "${PRETEND}" ]];then
+	elif _action_is force;then
 		printf '%b\n' "${contrast}Removing${restore} ${green}${1}${restore}"
 		rm -rf "${1}" 2>/dev/null && _changes_applied=$(( _changes_applied + 1 ))
 		eend $? 2>/dev/null
-	elif [[ -z "${yes}" && -n "${PRETEND}" ]];then
+	elif _action_is pretend;then
 		eend 0 2>/dev/null
 	fi
 }
@@ -682,18 +766,18 @@ _status_pc(){
 	local _rc=$?
 	[[ -n "${_changes_seen}" ]] || return ${_rc}
 	local pending=$(( _changes_found - _changes_applied ))
-	if [[ -n "${PRETEND}" ]];then
+	if _action_is pretend;then
 		if (( _changes_found > 0 ));then
-			printf '%b\n' "${contrast}portconf:${restore} pretend (-p), ${_changes_found} file(s) would change, nothing written"
+			printf '%b\n' "${contrast}portconf:${restore} dry-run, ${_changes_found} file(s) would change, nothing written"
 		else
 			printf '%b\n' "${contrast}portconf:${restore} no changes needed"
 		fi
 	elif (( _changes_applied > 0 && pending == 0 ));then
 		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s)"
 	elif (( _changes_applied > 0 ));then
-		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending (re-run with -y)"
+		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending (re-run with --ask or --force)"
 	elif (( pending > 0 ));then
-		printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (re-run with -y)"
+		printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (re-run with --ask or --force)"
 	else
 		printf '%b\n' "${contrast}portconf:${restore} no changes needed"
 	fi
@@ -1606,7 +1690,7 @@ invalid_uses(){
 				[[ ! -s "${file}" ]] && remove_ask "${file}"
 			else
 				printf '%b\n' "${underline}Removing empty file${restore} ${contrast}${f}${restore}"
-				rm "${f}" 2>/dev/null
+				remove_ask "${f}"
 				eend $? 2>/dev/null
 				continue
 			fi
@@ -1877,6 +1961,13 @@ f_to_d(){
 	while IFS= read -r package;do
 		if [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
+			_changes_seen=1
+			_changes_found=$(( _changes_found + 1 ))
+			if _action_is pretend;then
+				printf '%b\n' "Would convert file to directory: ${package}"
+				continue
+			fi
+			_confirm_action "Convert ${package##*/} from file to directory?" || continue
 			tmp_file="$(_mktemp)"
 			mv "${package}" "${tmp_file}" 2>/dev/null
 			sed -e 's|^#.*||g' -i "${tmp_file}"
@@ -1899,6 +1990,7 @@ f_to_d(){
 			set +f
 			eend $? 2>/dev/null
 			rm "${tmp_file}" 2>/dev/null
+			_changes_applied=$(( _changes_applied + 1 ))
 		elif [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Skipping ${red}directory${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
@@ -1916,6 +2008,13 @@ d_to_f(){
 	while IFS= read -r package;do
 		if [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
+			_changes_seen=1
+			_changes_found=$(( _changes_found + 1 ))
+			if _action_is pretend;then
+				printf '%b\n' "Would convert directory to file: ${package}"
+				continue
+			fi
+			_confirm_action "Convert ${package##*/} from directory to file?" || continue
 			tmp_file="$(_mktemp)"
 			file="${PORT_ETC}/${package##*/}"
 			touch "${file}"
@@ -1928,6 +2027,7 @@ d_to_f(){
 			rm -rf "${package}" 2>/dev/null
 			mv "${tmp_file}" "${package}" 2>/dev/null
 			chmod 0644 "${package}"
+			_changes_applied=$(( _changes_applied + 1 ))
 			eend $? 2>/dev/null
 		elif [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Skipping ${red}file${restore}: ${contrast}${package##*/}${restore}"
@@ -2352,6 +2452,12 @@ check_use_masked() {
 
 # regen_world: rebuild $WORLD: keep installed atoms not pulled in by `emerge -eopd --with-bdeps=y world` (filtered through `emerge -epO system` + qlist), excluding virtuals/*-libs; then interactively walk `emerge -pc` candidates.
 regen_world(){
+	if _action_is pretend;then
+		_changes_seen=1
+		_changes_found=$(( _changes_found + 1 ))
+		printf '%b\n' "Would regenerate ${WORLD} (${contrast}dry-run${restore})"
+		return 0
+	fi
 	notrash_pkgs=""
 	tmp_world="$(_mktemp)"
 	ex_world="$(_mktemp)"
@@ -2541,21 +2647,14 @@ overlays(){
 	if [[ -n "${bad_links}" ]];then
 		echo "broken symlinks:"
 		echo "${bad_links}"
-		printf '%b' "\n${contrast}Would you like remove?${restore} [${green}Yes${restore}/${red}No${restore}] "
-		while read z;do
-			case ${z} in
-				Yes | YES | yes | Y | y | "" )
-					for symlink in $(awk '{print $2}' <<< "${bad_links%$'\n'}");do
-						rm -v "${symlink}"
-						eend $? 2>/dev/null
-					done
-					break;;
-				No | NO | no | N | n )
-					break;;
-				* ) printf '%b' "Sorry, response '${z}' not understood. [${green}Yes${restore}/${red}No${restore}] "
-					continue;;
-			esac
-		done
+		if _action_is pretend;then
+			printf '%b\n' "Would remove the broken symlink(s) above (${contrast}dry-run${restore})"
+		elif _confirm_action "Remove the broken symlink(s) above?";then
+			for symlink in $(awk '{print $2}' <<< "${bad_links%$'\n'}");do
+				rm -v "${symlink}"
+				eend $? 2>/dev/null
+			done
+		fi
 	fi
 
 	choose_target(){
@@ -2635,7 +2734,13 @@ overlays(){
 			stop="true"
 		fi
 	}
-	ask
+	# Interactive mode preserves the historical "save selected repos" flow;
+	# force removes every unused repo, while pretend only reports the set.
+	if _action_is ask;then
+		ask
+	elif [[ -n "${UNUSED}" ]] && _action_is pretend;then
+		printf '%b\n' "Unused repos (would remove):\n${UNUSED}"
+	fi
 	# -f: eselect refuses to remove `local` (not in its remote registry) and
 	# `no-sync-uri` overlays without it -- which covers most hand-added
 	# overlays.  These are already confirmed UNUSED (no installed packages)
@@ -2643,6 +2748,7 @@ overlays(){
 	# rm -rf's the overlay dir, the same as the no-flag path already does for
 	# the removable remote overlays.
 	for repo in ${UNUSED}; do
+		_action_is pretend && continue
 		if eselect repository remove -f "${repo}" 2>/dev/null; then
 			eend 0 2>/dev/null
 		else
@@ -2655,6 +2761,10 @@ overlays(){
 	while [[ -z "${stop}" ]];do
 		trash="$(fix_deps)"
 		if [[ -n "${trash}" ]];then
+			if _action_is pretend;then
+				printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|would remove:\\${green}|;s|$|\\${restore}|")"
+				break
+			fi
 			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|removing:\\${green}|;s|$|\\${restore}|")"
 			# ${trash} is a space-separated list of dep-cache paths built by
 			# fix_deps -- including `${dep_path}/*` glob entries -- that MUST
@@ -2688,12 +2798,14 @@ printf '%b\n' \
 available OPTIONS:
 
 ${contrast}Common${restore}
+	    --ask:                  Apply changes interactively (confirm each change).
+	    --force:                Apply all changes without prompting.
 	-rc, --regen-cache:          Create and use temporary eix-cache and some fix for overlays. ${red}Highly recommend!${restore}
 	-b,  --backup:               Create backup for current /etc/portage state.
 	-r,  --restore:              Rolling up /etc/portage to one of available states.
 	-s,  --sort:                 Sort and deduplicate USE flags, keywords, all package.* files, and profile/use.mask.
-	-y,  --yes:                  Auto answer (Yes).
-	-p,  --pretend:              Check only.
+	-y,  --yes:                  Compatibility alias for --force.
+	-p,  --pretend:              Dry-run; report changes without writing (default).
 	-h,  -?, h, --help:          This help.
 ${contrast}\${USE}${restore}
 	-us, --use-sort:             Sort useflags. Remove doubles and preserve only last defined state (on/off).
@@ -2732,7 +2844,7 @@ OPTIONS must be separated by SPACE."
 }
 # ============================================================================
 # === DISPATCH  (run_it)
-# === PORTCONF_NO_MAIN sourcing guard, flag pre-strip (--yes, --pretend),
+# === PORTCONF_NO_MAIN sourcing guard, action-mode resolution and flag pre-strip,
 # === eix bootstrap decision (eix_check vs eix_method), then the case
 # === dispatcher that calls the right combo of funcs for each user flag.
 # ============================================================================
@@ -2765,9 +2877,42 @@ _needs_eix(){
 # to get function definitions without executing the command dispatch.
 if [[ "${PORTCONF_NO_MAIN:-}" != "1" && "${BASH_SOURCE[0]}" == "$0" ]]; then
 opts=" ${PORTCONF_DEFAULT_OPTS:-} ${*}"
-grep -q -e " --yes\>" -e " -y\>" <<< " ${opts}" && yes="1"
-grep -q -e " --pretend\>" -e " -p\>" <<< " ${opts}" && PRETEND="1"
-opts="$(sed -e 's| --yes\>||g;s| -y\>||g' -e 's| --pretend\>||g;s| -p\>||g' <<< " ${opts}")"
+# Resolve exactly one action policy before any bootstrap helper can run.  An
+# explicit dry-run always wins, including the historically common `-p -y`.
+# Ask and force are contradictory apply policies and therefore fail clearly.
+_mode_p=""
+_mode_a=""
+_mode_f=""
+for _global_opt in ${opts};do
+	case "${_global_opt}" in
+		-p|--pretend) _mode_p=1 ;;
+		--ask) _mode_a=1 ;;
+		-y|--yes|--force) _mode_f=1 ;;
+	esac
+done
+if [[ -n "${_mode_p}" ]];then
+	_set_action_mode pretend
+elif [[ -n "${_mode_a}" && -n "${_mode_f}" ]];then
+	printf '%s\n' "portconf: --ask and --force/--yes cannot be used together" >&2
+	exit 2
+elif [[ -n "${_mode_a}" ]];then
+	_set_action_mode ask
+elif [[ -n "${_mode_f}" ]];then
+	_set_action_mode force
+else
+	_set_action_mode pretend
+fi
+# Rebuild the dispatch string by exact tokens.  Regex-stripping `--force`
+# would also strip the prefix from `--force-trash`, turning it into the
+# unknown option `-trash`.
+_dispatch_opts=""
+for _global_opt in ${opts};do
+	case "${_global_opt}" in
+		-p|--pretend|--ask|-y|--yes|--force) ;;
+		*) _dispatch_opts+=" ${_global_opt}" ;;
+	esac
+done
+opts="${_dispatch_opts}"
 # Save the dispatch-entry stdin on fd 9.  diff_ask / remove_ask read
 # Yes/No answers from fd 9 because most callers wrap them inside
 # `while ...; done < <(find ...)` loops (sort_uniq_files, file_or_dir's
@@ -2792,7 +2937,10 @@ else
 fi
 # Use $# instead of -z "${@}" — the latter relied on implicit array-
 # concatenation inside [[ ]] (worked, but tripped SC2199).
-[[ $# -eq 0 || -z "${opts}" ]] && help_pc
+# Only a genuinely empty command line prints help.  A mode-only invocation
+# (`-p`, `--ask`, `--force`, or legacy `-y`) remains the historical silent
+# no-op after its global token is removed from the dispatch list.
+[[ $# -eq 0 ]] && help_pc
 for OPT in ${opts};do
 	case "${OPT}" in
 	--backup | -b ) backup;;

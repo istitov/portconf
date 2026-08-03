@@ -12,7 +12,7 @@ _portconf() {
 	cur="${COMP_WORDS[COMP_CWORD]}"
 
 	opts="
-		--regen-cache --backup --restore --sort --yes --pretend
+		--ask --force --regen-cache --backup --restore --sort --yes --pretend
 		--version --help
 		--use-sort --use-invalid --use-make --stupid-use-profile --use-full
 		--keyword-uniq --keyword-one

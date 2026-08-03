@@ -1,4 +1,4 @@
-.TH PORTCONF 1 "2026-06-10" "portconf 2\.0\.5" "Gentoo Utilities"
+.TH PORTCONF 1 "2026-08-03" "portconf 2\.0\.5" "Gentoo Utilities"
 .SH NAME
 portconf \- /etc/portage configuration cleaner and manager
 .SH SYNOPSIS
@@ -12,12 +12,26 @@ It handles USE flags, keywords, package atoms, backups, overlays, and the world 
 .PP
 Operations that modify
 .I /etc/portage
-automatically create a timestamped backup beforehand.
+automatically create a timestamped backup beforehand when apply mode is enabled.
 Up to
 .B COUNT
 (default 10) backups are retained.
+.PP
+The default action mode is a dry-run: planned changes are displayed but no
+persistent state, including backup archives, is written.  Use
+.B \-\-ask
+to apply interactively or
+.B \-\-force
+to apply without prompting.
 .SH OPTIONS
 .SS Common
+.TP
+.B \-\-ask
+Apply changes with interactive confirmations.
+.TP
+.B \-\-force
+Apply all changes without prompting.  For restore operations, select the
+newest available backup.
 .TP
 .BR \-rc ", " \-\-regen\-cache
 Create and use a temporary eix cache, and fix overlay issues.
@@ -31,7 +45,8 @@ state.
 .BR \-r ", " \-\-restore
 Roll
 .I /etc/portage
-back to a previously saved state.
+back to a previously saved state.  In ask mode, select a backup interactively;
+in force mode, restore the newest backup.
 .TP
 .BR \-s ", " \-\-sort
 Sort and deduplicate USE flags, keywords, all
@@ -39,10 +54,12 @@ Sort and deduplicate USE flags, keywords, all
 files, and profile/use.mask entries.
 .TP
 .BR \-y ", " \-\-yes
-Answer yes to all interactive prompts.
+Compatibility alias for
+.BR \-\-force .
 .TP
 .BR \-p ", " \-\-pretend
-Check only; make no changes.
+Dry-run: report planned changes without writing persistent state.  This is the
+default and takes precedence over apply flags when explicitly supplied.
 .TP
 .BR \-V ", " \-\-version
 Print version and exit.

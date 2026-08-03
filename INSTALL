@@ -50,6 +50,13 @@ portconf requires the following tools at runtime:
 The -rc / --regen-cache option (strongly recommended) also requires eix-update.
 
 
+Action modes
+------------
+portconf is a dry-run by default and writes no persistent state.  Use --ask
+to apply changes interactively, or --force for a non-interactive automation
+run.  The historical -y / --yes option remains an alias for --force.
+
+
 Running the test suite
 ----------------------
 Unit tests (no runtime tools required beyond bats):
@@ -72,10 +79,11 @@ host-sensitive: they expect a working, populated Portage tree.
 
 Smoke tests run the BUILT src/portconf binary end-to-end against the host's
 real Portage tree (eselect profile list, /etc/portage/make.profile, eix).
-They cover only read-only flags (--help, --version, -apu, -cpu, no-op
-combinations) — enough to catch substitution failures, profile-tree layout
-drift, and eix/eselect output-format regressions, without mutating
-/etc/portage or /var/lib/portconf.  Requires bats, eselect, eix.
+They cover read-only flags plus every mutating dispatch arm against throwaway
+roots in the default dry-run mode — enough to catch substitution failures,
+profile-tree layout drift, action-policy bypasses, and eix/eselect
+output-format regressions without mutating the host's /etc/portage or
+/var/lib/portconf.  Requires bats, eselect, eix.
 
     make check-smoke            # or: bats tests/smoke/
 

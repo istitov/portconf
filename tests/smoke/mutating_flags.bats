@@ -10,10 +10,9 @@
 #   DEP_PATH   sandboxed dep-cache (so overlays()'s fix_deps doesn't
 #              touch the host's /var/cache/edb/dep)
 #
-# Combined with -p (--pretend), every actual file mutation downstream of
-# backup() is gated — assertions can verify PORT_ETC is unchanged after
-# the run.  backup() itself ALWAYS writes (it doesn't honor PRETEND by
-# design), so each test confirms the tarball lands in the sandboxed BRDIR.
+# The default action mode is a real dry-run: every persistent mutation,
+# including backup creation, is gated.  Explicit -p is retained in much of
+# this dispatch coverage to exercise its compatibility path too.
 #
 # Coverage focus: the dispatch arm wiring.  Unit and integration tests
 # already validate each individual function; smoke validates that the
@@ -23,9 +22,8 @@
 #
 # eix-cache strategy: for arms that need real eix (-ui/-uf/-t/-ft/-f/-sm/-sum
 # satisfy the _needs_eix gate), eix_method's "Create temporary cache?"
-# prompt fires when OVERLAY_CACHE_METHOD != "parse|ebuild*" (the modern
-# Gentoo default).  smoke_run pipes "No" to dismiss it; eix then uses
-# the host's existing populated cache to validate test atoms.  -um is NOT
+# configuration is unsuitable.  Dry-run now keeps using the existing cache
+# and merely explains that -rc can build a temporary fresh one.  -um is NOT
 # here -- use_makeconf reads no eix cache.
 
 load test_helper
@@ -46,10 +44,8 @@ teardown() {
 
 # Helper assertions.
 
-_assert_brdir_has_backup() {
-	# backup() writes portage_<timestamp>.tar.bz2 unconditionally on every
-	# mutating-arm invocation (PRETEND doesn't gate backup itself).
-	[[ -n "$(ls "${SMOKE_BRDIR}/")" ]]
+_assert_brdir_empty() {
+	[[ -z "$(find "${SMOKE_BRDIR}" -mindepth 1 -print -quit)" ]]
 }
 
 _assert_port_etc_unchanged() {
@@ -65,7 +61,7 @@ _assert_port_etc_unchanged() {
 @test "smoke: -y -p -b — standalone backup" {
 	smoke_run -y -p -b
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 	_assert_port_etc_unchanged
 }
 
@@ -75,19 +71,20 @@ _assert_port_etc_unchanged() {
 		> "${SMOKE_PORT_ETC}/package.use"
 	smoke_run -y -p -c
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -ac — backup + rm_all_comments" {
 	smoke_run -y -p -ac
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -f2d — backup + f_to_d (file → dir layout)" {
 	smoke_run -y -p -f2d
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
+	[ -f "${SMOKE_PORT_ETC}/package.use" ]
 }
 
 # --- composite arms WITHOUT eix-dep-keys --------------------------------
@@ -95,38 +92,38 @@ _assert_port_etc_unchanged() {
 @test "smoke: -y -p -s — sort composite (backup + 4 fns)" {
 	smoke_run -y -p -s
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -us — backup + sort_use_file" {
 	smoke_run -y -p -us
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -ku — backup + uniq_keywords" {
 	smoke_run -y -p -ku
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -ko — backup + sort_keywords" {
 	smoke_run -y -p -ko
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -y -p -um — backup + use_makeconf (reads no eix cache)" {
 	smoke_run -y -p -um
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 # --- composite arms WITH eix-dep-keys (slow path) -----------------------
-# Each calls a handler that queries the eix PACKAGE cache, so _needs_eix fires
-# and eix_method prompts (dismissed with "No" -> host cache) when run without
-# -y.  -sm/-sum (mask_trash / remove_trash) join the set the binary used to
-# skip; -um moved out above (use_makeconf reads no cache).
+# Each calls a handler that queries the eix PACKAGE cache, so _needs_eix fires.
+# Dry-run reuses the host cache without prompting.  -sm/-sum (mask_trash /
+# remove_trash) join the set the binary used to skip; -um moved out above
+# (use_makeconf reads no cache).
 
 @test "smoke: -p -sm — backup + mask_trash (real qatom; now gated on eix)" {
 	# Pre-fix, -sm skipped the eix gate entirely and ran mask_trash against
@@ -134,28 +131,27 @@ _assert_port_etc_unchanged() {
 	# like -ui, so the "No" pipe (not -y) keeps it on the host cache.
 	smoke_run -p -sm
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -p -sum — backup + stupid_unmask -> remove_trash (gated on eix)" {
 	smoke_run -p -sum
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -p -ui — invalid_uses composite" {
-	# Without -y, eix_method DOESN'T auto-run eix-update; smoke_run pipes
-	# "No" to dismiss the prompt and uses the host's existing cache.
+	# Dry-run does not auto-run eix-update; it uses the host's existing cache.
 	smoke_run -p -ui
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 	_assert_port_etc_unchanged
 }
 
 @test "smoke: -p -t — trash composite (6 fns including not_found chain)" {
 	smoke_run -p -t
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 @test "smoke: -p -uf — use-full composite (backup + 6 fns + eix cleanup)" {
@@ -164,7 +160,7 @@ _assert_port_etc_unchanged() {
 	# eix_check is what populates ${eix_cache}, and it runs only here.
 	smoke_run -p -uf
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 	_assert_port_etc_unchanged
 }
 
@@ -174,7 +170,7 @@ _assert_port_etc_unchanged() {
 	# passes its unit tests.
 	smoke_run -p -f
 	[ "$status" -eq 0 ]
-	_assert_brdir_has_backup
+	_assert_brdir_empty
 }
 
 # --- profile-listing already covered by profile.bats; world-state arm ---
@@ -187,7 +183,6 @@ _assert_port_etc_unchanged() {
 	# rest of the dispatch) against a directory-layout package.use
 	# fragment that contains a header comment block above an atom,
 	# and asserts the header survives.
-	(( UID != 0 )) && skip "needs root for diff_ask mv branch"
 	rm -f "${SMOKE_PORT_ETC}/package.use"
 	mkdir "${SMOKE_PORT_ETC}/package.use"
 	# Fixture: header comment + atom + flag.  sys-apps/grep is on every
@@ -229,8 +224,6 @@ _assert_port_etc_unchanged() {
 	# diff_ask's `read x` would hit EOF instead of the user's "Yes"
 	# answer and silently rm the tmp file without mutating PORT_ETC.
 	# diff_ask now reads from fd 9 (dispatch-entry stdin dup) instead.
-	# Needs UID==0 because diff_ask's Yes branch gates mv on root.
-	(( UID != 0 )) && skip "needs root for diff_ask mv branch"
 	rm -f "${SMOKE_PORT_ETC}/package.use"
 	mkdir "${SMOKE_PORT_ETC}/package.use"
 	printf 'sys-apps/grep static\nsys-apps/grep static\nsys-apps/grep -static\n' \
@@ -240,7 +233,8 @@ _assert_port_etc_unchanged() {
 		BRDIR="${SMOKE_BRDIR}" \
 		PKGDB="${SMOKE_PKGDB}" \
 		DEP_PATH="${SMOKE_DEP}" \
-		"${PORTCONF_BIN}" -us <<< $'Yes\n'
+		PORTCONF_CONF=/dev/null \
+		"${PORTCONF_BIN}" --ask -us <<< $'Yes\n'
 	[ "$status" -eq 0 ]
 	# Without the fix: 3 lines unchanged.  With the fix: sort_uses collapses
 	# duplicates and last-state ("-static") wins, leaving one normalised line.
@@ -249,7 +243,7 @@ _assert_port_etc_unchanged() {
 	[[ "${content}" == 'sys-apps/grep -static' ]]
 }
 
-@test "smoke: -y -p -wb — world_backup standalone" {
+@test "smoke: -y -p -wb — explicit pretend wins and writes no world backup" {
 	# WORLD defaults to /var/lib/portage/world (real host path).  For
 	# isolated smoke testing point it at the sandbox.  Tarball lands in
 	# ${BRDIR}/world/ — verify it's there.
@@ -264,6 +258,6 @@ _assert_port_etc_unchanged() {
 		WORLD="${world_file}" \
 		"${PORTCONF_BIN}" -y -p -wb <<< $'No\n'
 	[ "$status" -eq 0 ]
-	[[ -d "${SMOKE_BRDIR}/world" ]]
-	[[ -n "$(ls "${SMOKE_BRDIR}/world/")" ]]
+	_assert_brdir_empty
+	[[ "$(cat "${world_file}")" == 'sys-apps/portage' ]]
 }

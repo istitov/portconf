@@ -55,6 +55,7 @@ EXTRA_DIST = \
 	tests/smoke/test_helper.bash \
 	tests/smoke/help.bats \
 	tests/smoke/profile.bats \
+	tests/smoke/action_modes.bats \
 	tests/smoke/mutating_flags.bats \
 	tests/smoke/no_color.bats \
 	tests/property/test_helper.bash \

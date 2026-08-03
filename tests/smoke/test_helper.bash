@@ -14,8 +14,8 @@
 #   mutating_flags.bats — every other dispatch arm, run with PORT_ETC /
 #     BRDIR / PKGDB / DEP_PATH overridden to throwaway tmpdirs (made
 #     possible by the path-overridability refactor at line 39-43 of
-#     portconf.in) and -p (--pretend) to gate every actual mutation
-#     downstream of backup().  The smoke_sandbox helper below sets up
+#     portconf.in) and the default dry-run mode to gate every persistent
+#     mutation, including backups.  The smoke_sandbox helper below sets up
 #     and tears down the tmpdirs.
 
 source "${BATS_TEST_DIRNAME}/../test_helper.bash"
@@ -50,10 +50,9 @@ assert_output_contains() {
 # Tests then invoke the binary like:
 #   run env PORT_ETC="${SMOKE_PORT_ETC}" BRDIR="${SMOKE_BRDIR}" \
 #       PKGDB="${SMOKE_PKGDB}" DEP_PATH="${SMOKE_DEP}" \
-#       "${PORTCONF_BIN}" -p <flag> <<< $'No\n'
-# The "No" stdin dismisses eix_method's "Create temporary cache?" prompt
-# without re-running eix-update (slow); eix uses the host's existing
-# populated cache to validate test atoms.
+#       "${PORTCONF_BIN}" -p <flag>
+# PORTCONF_CONF=/dev/null prevents host defaults from changing the requested
+# action mode.  Dry-run never asks eix_method's cache-rebuild question.
 smoke_sandbox() {
 	SMOKE_PORT_ETC="$(mktemp -d)"
 	SMOKE_BRDIR="$(mktemp -d)"
@@ -90,5 +89,6 @@ smoke_run() {
 		BRDIR="${SMOKE_BRDIR}" \
 		PKGDB="${SMOKE_PKGDB}" \
 		DEP_PATH="${SMOKE_DEP}" \
+		PORTCONF_CONF=/dev/null \
 		"${PORTCONF_BIN}" "$@" <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
 }
