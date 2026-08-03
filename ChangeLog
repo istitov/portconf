@@ -28,6 +28,8 @@
 	* CLI arguments remain exact array elements through mode resolution,
 	  validation, cache setup, and dispatch; wildcard-shaped options such as
 	  -? no longer expand against names in the working directory.
+	* --help and --version terminate during preflight, before any earlier
+	  mutating option can create a backup or alter configuration.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as

@@ -95,6 +95,15 @@ _run_mode() {
 	_assert_no_backup
 }
 
+@test "action mode: help preempts an earlier mutating option" {
+	_write_commented_fixture
+	_run_mode --force -c --help
+	[ "$status" -eq 0 ]
+	[[ "$(cat "${SMOKE_PORT_ETC}/package.use")" == $'# remove me\nsys-apps/grep static' ]]
+	_assert_no_backup
+	assert_output_contains 'Usage: portconf'
+}
+
 @test "action mode: --force does not collide with --force-trash" {
 	_run_mode --force-trash
 	[ "$status" -eq 0 ]

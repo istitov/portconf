@@ -3404,6 +3404,15 @@ if ! _validate_dispatch_opts "${_dispatch_opts[@]}";then
 	help_pc >&2
 	exit 2
 fi
+# Informational control options terminate before an earlier mutating token can
+# acquire a lock, create a backup, or run a handler.  Validation deliberately
+# comes first so `--help --bad-option` still diagnoses the malformed request.
+for _global_opt in "${_dispatch_opts[@]}";do
+	case "${_global_opt}" in
+		--help|-h|-\?|h) help_pc; exit 0 ;;
+		--version|-V) echo "portconf ${PACKAGE_VERSION}"; exit 0 ;;
+	esac
+done
 # Acquire the writer lock before cache bootstrap or any dispatch handler can
 # touch shared state.  Pretend mode remains side-effect-free and lock-free.
 if ! _action_is pretend && _needs_write_lock "${_dispatch_opts[@]}";then
