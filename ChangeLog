@@ -1,3 +1,34 @@
+2026-08-03  Ivan S. Titov  <iohann.s.titov@gmail.com>
+
+	2.0.6_pre1 — development snapshot
+
+	Post-2.0.5 audit hardening.  Builds from the development line now carry
+	a distinct pre-release identity rather than producing binaries and source
+	archives indistinguishable from the signed 2.0.5 release.
+
+	Safety:
+	* Dry-run is the authoritative default action policy; applying changes
+	  requires --ask or --force, including restore, conversion, world, and
+	  repository workflows.
+	* Destructive multi-step operations use same-filesystem staging and an
+	  undo journal, restoring the original state on ordinary failures.
+	* Applying processes are serialized with an exclusive advisory lock.
+	* Rewrites preserve access metadata; file/directory conversions map the
+	  existing mode and ownership onto the new representation.
+
+	Correctness:
+	* Temp cleanup survives command-substitution subshells; backup rotation,
+	  eix-cache lifetime, qatom parsing, environment cleanup, mask decisions,
+	  keyword pruning, overlay cache cleanup, and status accounting were
+	  hardened across the remaining post-2.0.5 audit findings.
+	* README test inventory now matches all four tiers and is regression-
+	  checked against the test tree.
+
+	Build:
+	* configure.ac and the man page identify this development snapshot as
+	  2.0.6_pre1, so make dist emits portconf-2.0.6_pre1.tar.xz instead of
+	  colliding with the released portconf-2.0.5 archive.
+
 2026-06-10  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.5 — "Damage Control"

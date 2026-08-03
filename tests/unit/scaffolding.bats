@@ -21,8 +21,14 @@ setup() {
 	[[ -n "${PORT_ETC}" ]]
 }
 
-@test "scaffolding: PACKAGE_VERSION is set (substituted at build time or shows placeholder)" {
+@test "scaffolding: version metadata is present and consistent" {
+	local root="${BATS_TEST_DIRNAME}/../.."
+	local configured_version man_version
 	[[ -n "${PACKAGE_VERSION}" ]]
+	configured_version="$(sed -n 's/^AC_INIT(\[portconf\],\[\([^]]*\)\].*/\1/p' "${root}/configure.ac")"
+	man_version="$(awk 'NR == 1 { print $6 }' "${root}/man/portconf.1" | tr -d '"\\')"
+	[[ -n "${configured_version}" ]]
+	assert_equal "${man_version}" "${configured_version}"
 }
 
 @test "scaffolding: README test inventory matches the test tree" {
