@@ -142,3 +142,13 @@ teardown() {
 	run cat "${TEST_PORT_ETC}/package.use"
 	assert_output "$(printf '# original header\napp-misc/foo bar baz')"
 }
+
+@test "sort_uniq_files: headers from every duplicate atom are preserved" {
+	printf '%s\n' \
+		"# first reason" "app-misc/foo bar" \
+		"# second reason" "app-misc/foo baz" \
+		> "${TEST_PORT_ETC}/package.use"
+	sort_uniq_files
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo bar baz')"
+}

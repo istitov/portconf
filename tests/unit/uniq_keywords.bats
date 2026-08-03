@@ -58,6 +58,16 @@ teardown() {
 	assert_output "app-misc/foo ~amd64"
 }
 
+@test "uniq_keywords: headers from every duplicate atom are preserved" {
+	printf '%s\n' \
+		"# first reason" "app-misc/foo ~amd64" \
+		"# second reason" "app-misc/foo amd64" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
+	uniq_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo amd64')"
+}
+
 @test "uniq_keywords: conflicting keyword tokens — last occurrence wins" {
 	# sort_passed_uses treats -amd64 as the negation of amd64
 	printf '%s\n' "app-misc/foo amd64" "app-misc/foo -amd64" > "${TEST_PORT_ETC}/package.accept_keywords"

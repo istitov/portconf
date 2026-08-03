@@ -1138,10 +1138,10 @@ sort_uniq_files(){
 				sub(/[[:space:]]+$/, "", opts)
 				if (!(atom in atoms)) {
 					atoms[atom] = opts
-					headers[atom] = pending_header
 				} else if (opts != "") {
 					atoms[atom] = atoms[atom] " " opts
 				}
+				headers[atom] = headers[atom] pending_header
 				pending_header = ""
 			}
 			END {
@@ -1254,9 +1254,9 @@ sort_uses(){
 	# in sort_passed_uses.  Inline trailing comments survive on their
 	# atom line; whole-line `#` comments + blank lines form header
 	# blocks that travel with their atom on sort; trailing comments at
-	# EOF emit verbatim.  Atoms that resolve to no remaining USE flags
-	# AND have no inline comment are dropped, taking their header with
-	# them (matches the old bare-atom-drop semantics).
+	# EOF emit verbatim.  Existing flagless atoms remain flagless instead
+	# of being discarded, and every header attached to duplicate atom
+	# occurrences is retained in original order.
 	awk '
 		function resolve_uses(tokens,    a, n, i, j, base, last_state, ordering, bases, nb, tmp, out) {
 			delete last_state
@@ -1306,11 +1306,11 @@ sort_uses(){
 			if (!(atom in atoms)) {
 				atoms[atom] = rest
 				inline_comments[atom] = inline_comment
-				headers[atom] = pending_header
 			} else {
 				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
 				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
 			}
+			headers[atom] = headers[atom] pending_header
 			pending_header = ""
 		}
 
@@ -1320,8 +1320,8 @@ sort_uses(){
 				a = sorted[i]
 				resolved = resolve_uses(atoms[a])
 				if (resolved == "" && inline_comments[a] == "")
-					continue   # drop bare atom and its header
-				if (resolved == "")
+					printf "%s%s\n", headers[a], a
+				else if (resolved == "")
 					printf "%s%s %s\n", headers[a], a, inline_comments[a]
 				else if (inline_comments[a] == "")
 					printf "%s%s %s\n", headers[a], a, resolved
@@ -1459,11 +1459,11 @@ sort_keys(){
 			if (!(atom in atoms)) {
 				atoms[atom] = rest
 				inline_comments[atom] = inline_comment
-				headers[atom] = pending_header
 			} else {
 				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
 				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
 			}
+			headers[atom] = headers[atom] pending_header
 			pending_header = ""
 		}
 
@@ -1497,8 +1497,8 @@ sort_keywords(){
 		# Same shape as sort_keys but per-atom keyword resolution
 		# differs: keep ONLY the absolute last token (across all
 		# duplicate atom lines), not last-state-per-base.  Empty
-		# default to ~$ARCH.  Inline comment + header carry from
-		# the first occurrence.
+		# default to ~$ARCH.  Inline comments carry from the first
+		# occurrence; header blocks from every occurrence are retained.
 		awk -v arch="${ARCH}" '
 			/^[[:space:]]*$|^[[:space:]]*#/ {
 				pending_header = pending_header $0 "\n"
@@ -1520,9 +1520,9 @@ sort_keywords(){
 					if (tokens[i] != "") { last = tokens[i]; break }
 				}
 				if (!(atom in atoms)) {
-					headers[atom] = pending_header
 					inline_comments[atom] = inline_comment
 				}
+				headers[atom] = headers[atom] pending_header
 				atoms[atom] = last    # always overwrite — last occurrence wins
 				pending_header = ""
 			}

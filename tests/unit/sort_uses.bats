@@ -10,8 +10,7 @@
 #     it ("header block") so the block travels with the atom on sort
 #   - preserves inline trailing comments on the atom line
 #   - preserves trailing comments at end of file verbatim
-#   - removes atom entries with no remaining flags (dropping their
-#     header block too, since the atom is gone)
+#   - preserves atom entries that have no flags, including their header
 #   - sorts output lines alphabetically by atom
 #
 # Tests use yes=1 (auto-apply) so diff_ask commits every change.
@@ -122,13 +121,20 @@ write_use() { printf '%s\n' "$@" > "${TEST_PORT_ETC}/package.use"; }
 	assert_output "$(printf 'app-misc/foo bar\n# trailing')"
 }
 
-@test "sort_uses: bare-atom case — header dropped along with the atom" {
-	# When sort_uses leaves an atom with no flags (which then gets
-	# dropped), its header would be orphaned.  Drop the header too.
-	write_use "# this header annotates the dropped atom" "app-misc/foo"
+@test "sort_uses: flagless atom and its header are preserved" {
+	write_use "# this header annotates the flagless atom" "app-misc/foo"
 	sort_use_file
 	run cat "${TEST_PORT_ETC}/package.use"
-	assert_output ""
+	assert_output "$(printf '# this header annotates the flagless atom\napp-misc/foo')"
+}
+
+@test "sort_uses: headers from every duplicate atom are preserved" {
+	write_use \
+		"# first reason" "app-misc/foo bar" \
+		"# second reason" "app-misc/foo baz"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo bar baz')"
 }
 
 @test "sort_uses: inline comment preserved" {

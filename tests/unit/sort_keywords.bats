@@ -59,6 +59,16 @@ teardown() {
 	assert_output "app-misc/foo ~amd64"
 }
 
+@test "sort_keywords: headers from every duplicate atom are preserved" {
+	printf '%s\n' \
+		"# first reason" "app-misc/foo ~amd64" \
+		"# second reason" "app-misc/foo **" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo **')"
+}
+
 # --- default keyword ---
 
 @test "sort_keywords: atom without keyword — gets ~ARCH added" {

@@ -11,7 +11,7 @@ Currently maintained by [istitov](https://github.com/istitov/portconf).
 Version 2.0.0 marked the first release of the maintained fork: a thorough
 modernisation of the inherited script with an autotools build system,
 env-overridable system paths for sandboxing, and 15 latent bugs fixed.  The
-current tree is protected by a 456-test suite across four tiers (277 unit / 107
+current tree is protected by a 460-test suite across four tiers (281 unit / 107
 integration / 53 smoke / 19 property).
 See [`ChangeLog`](ChangeLog) for the full breakdown.
 
@@ -26,11 +26,13 @@ smoke test layers, shellcheck, and `make distcheck` before landing.
 
 ### USE flags
 - Sort, remove duplicates, preserve last defined state (on/off)
+- Preserve flagless atoms and every duplicate occurrence's comment block
 - Remove flags that are invalid or already set globally in `make.conf` / profile
 - Check flags across **all available versions** of a package
 
 ### Keywords
 - Sort and deduplicate, preserving the last-defined state per token (`--keyword-uniq`)
+- Preserve comment blocks from every duplicate atom occurrence
 - Keep only the single latest-defined keyword per atom, discarding earlier ones (`--keyword-one`)
 
 ### Atoms

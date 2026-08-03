@@ -33,6 +33,9 @@
 	* An argument-free invocation is help-only even when
 	  PORTCONF_DEFAULT_OPTS contains a mutating action; defaults still prepend
 	  to every invocation carrying an explicit command-line option.
+	* Sorting preserves flagless package.use atoms and concatenates the comment
+	  blocks attached to every duplicate atom occurrence instead of silently
+	  discarding all but the first block.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as
