@@ -55,6 +55,9 @@ Action modes
 portconf is a dry-run by default and writes no persistent state.  Use --ask
 to apply changes interactively, or --force for a non-interactive automation
 run.  The historical -y / --yes option remains an alias for --force.
+Destructive multi-step operations stage replacements beside their targets and
+roll back the batch on ordinary failures.  Restore archives are validated and
+extracted into staging before any live path is replaced.
 
 
 Running the test suite

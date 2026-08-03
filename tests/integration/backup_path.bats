@@ -40,7 +40,7 @@ teardown() {
 	# Exactly one new tarball under the sandboxed BRDIR.
 	[[ "$(ls "${BRDIR}" | wc -l)" -eq 1 ]]
 	run ls "${BRDIR}/"
-	[[ "${output}" =~ ^portage_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+:[0-9]+\.tar\.bz2$ ]]
+	[[ "${output}" =~ ^portage_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+:[0-9]+:[0-9]+\.tar\.bz2$ ]]
 }
 
 @test "backup: tarball contains the sandboxed PORT_ETC contents" {

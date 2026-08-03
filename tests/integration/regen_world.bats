@@ -56,8 +56,10 @@ qlist() {
 		esac
 	done
 	if [[ ${#atoms[@]} -eq 0 ]]; then
+		[[ "${QLIST_FAIL:-}" == "installed" ]] && return 1
 		printf '%s\n' "${QLIST_INSTALLED:-}"
 	else
+		[[ "${QLIST_FAIL:-}" == "filtered" ]] && return 1
 		printf '%s\n' "${atoms[@]}"
 	fi
 }
@@ -72,6 +74,7 @@ qlist() {
 emerge() {
 	case "$*" in
 		*'-eopd'*)
+			[[ "${EMERGE_FAIL:-}" == "eopd" ]] && return 1
 			# Emit one [ebuild] line per atom in EMERGE_PRETEND.  awk $4
 			# extracts the atom — match the column layout `[ebuild U ] <atom>`.
 			local atom
@@ -80,6 +83,7 @@ emerge() {
 			done
 			;;
 		*'-epO'*)
+			[[ "${EMERGE_FAIL:-}" == "system" ]] && return 1
 			# System set: emit `[ebuild ...] <atom>` lines.  Empty by
 			# default — no atoms get added from the system-set path.
 			local atom
@@ -88,6 +92,7 @@ emerge() {
 			done
 			;;
 		*'-pc'*)
+			[[ "${EMERGE_FAIL:-}" == "depclean" ]] && return 1
 			# Depclean pretend.  Empty list = nothing to save = ask()
 			# returns 0 without prompting.
 			printf 'All selected packages: %s\n' "${EMERGE_DEPCLEAN:-}"
@@ -174,4 +179,45 @@ emerge() {
 	[[ "${output}" == *'world++:'* ]]
 	[[ "${output}" == *'app-misc/foo'* ]]
 	[[ "${output}" == *'app-misc/bar'* ]]
+}
+
+@test "regen_world: installed-package listing failure never moves world" {
+	local before
+	before="$(cat "${WORLD}")"
+	QLIST_FAIL=installed
+	run regen_world
+	[ "$status" -ne 0 ]
+	[[ "$(cat "${WORLD}")" == "${before}" ]]
+	[[ -z "$(find "${WORLD%/*}" -maxdepth 1 -name '.*.portconf-txn.*' -print -quit)" ]]
+}
+
+@test "regen_world: dependency calculation failure rolls world back" {
+	local before
+	before="$(cat "${WORLD}")"
+	QLIST_INSTALLED='app-misc/foo'
+	EMERGE_FAIL=eopd
+	run regen_world
+	[ "$status" -ne 0 ]
+	[[ "$(cat "${WORLD}")" == "${before}" ]]
+	[[ -z "$(find "${WORLD%/*}" -maxdepth 1 -name '.*.portconf-txn.*' -print -quit)" ]]
+}
+
+@test "regen_world: system-set calculation failure rolls world back" {
+	local before
+	before="$(cat "${WORLD}")"
+	QLIST_INSTALLED='app-misc/foo'
+	EMERGE_FAIL=system
+	run regen_world
+	[ "$status" -ne 0 ]
+	[[ "$(cat "${WORLD}")" == "${before}" ]]
+}
+
+@test "regen_world: depclean failure rolls world back" {
+	local before
+	before="$(cat "${WORLD}")"
+	QLIST_INSTALLED='app-misc/foo'
+	EMERGE_FAIL=depclean
+	run regen_world
+	[ "$status" -ne 0 ]
+	[[ "$(cat "${WORLD}")" == "${before}" ]]
 }

@@ -6,7 +6,7 @@
 #   etc_update    = max mtime of all files under PORT_ETC
 #   portconf_update = max mtime of files in BRDIR (0 when BRDIR is empty)
 #   if etc_update > portconf_update → create new tarball
-#   if count(BRDIR) >= COUNT       → remove oldest tarball first
+#   after a verified archive publishes, trim oldest files down to COUNT
 #
 # tar is stubbed to avoid writing real archives.
 # eend/ebegin are stubbed via make_test_portage.
@@ -94,4 +94,40 @@ _fake_backup() {
 	assert_success
 	refute_output --partial 'arithmetic syntax'
 	refute_output --regexp 'line [0-9]+:'
+}
+
+@test "backup: archive creation failure retains every existing snapshot" {
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
+	_fake_backup "19.01.01-00:00"
+	_fake_backup "19.02.01-00:00"
+	touch -d '2019-01-01' "${BRDIR}"/portage_19.*.tar.bz2
+	local before
+	before="$(find "${BRDIR}" -maxdepth 1 -type f -printf '%f\n' | sort)"
+	tar() { return 1; }
+	run backup
+	[ "$status" -ne 0 ]
+	[[ "$(find "${BRDIR}" -maxdepth 1 -type f -printf '%f\n' | sort)" == "${before}" ]]
+}
+
+@test "backup: verification failure retains every existing snapshot" {
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
+	_fake_backup "19.01.01-00:00"
+	touch -d '2019-01-01' "${BRDIR}/portage_19.01.01-00:00.tar.bz2"
+	local before
+	before="$(find "${BRDIR}" -maxdepth 1 -type f -printf '%f\n' | sort)"
+	tar() {
+		if [[ "$1" == "-jcf" ]];then touch "$2"; return 0; fi
+		return 1
+	}
+	run backup
+	[ "$status" -ne 0 ]
+	[[ "$(find "${BRDIR}" -maxdepth 1 -type f -name 'portage_*.tar.bz2' -printf '%f\n' | sort)" == "${before}" ]]
+}
+
+@test "backup: newer world backup directory does not suppress portage backup" {
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
+	mkdir -p "${BRDIR}/world"
+	touch -d 'next year' "${BRDIR}/world/world_future.tar.bz2"
+	backup
+	[ "$(find "${BRDIR}" -maxdepth 1 -type f -name 'portage_*.tar.bz2' | wc -l)" -eq 1 ]
 }

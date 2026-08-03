@@ -23,6 +23,13 @@ persistent state, including backup archives, is written.  Use
 to apply interactively or
 .B \-\-force
 to apply without prompting.
+.PP
+Destructive multi-step operations use same-filesystem staging and an undo
+journal.  Ordinary failures roll back world regeneration, layout conversions,
+restores, and repository cleanup before the command returns.  Backup archives
+are verified before publication and rotation.  Restore archives are rejected
+unless all members remain inside the expected target root and use supported
+file types.
 .SH OPTIONS
 .SS Common
 .TP

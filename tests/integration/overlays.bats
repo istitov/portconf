@@ -165,6 +165,35 @@ EOF
 	[[ "${output}" == *'eselect repository remove -f stubborn'* ]]
 }
 
+@test "overlays: later repository failure rolls back config, trees, and broken links" {
+	local repo_a="${BATS_TEST_TMPDIR}/repo-a"
+	local repo_b="${BATS_TEST_TMPDIR}/repo-b"
+	local active="${BATS_TEST_TMPDIR}/active-repo"
+	mkdir -p "${repo_a}" "${repo_b}" "${active}"
+	_declare_overlay "repo-a" "${repo_a}"
+	_declare_overlay "repo-b" "${repo_b}"
+	_declare_overlay "active" "${active}"
+	_install_pkg "app-misc/from-active-1.0" "active"
+	ln -s "missing-target" "${active}/broken-link"
+	local calls=0
+	eselect() {
+		calls=$(( calls + 1 ))
+		if (( calls == 1 ));then
+			rm -f "${PORT_ETC}/repos.conf/$4.conf"
+			return 0
+		fi
+		return 1
+	}
+	run overlays
+	[ "$status" -ne 0 ]
+	[ -d "${repo_a}" ]
+	[ -d "${repo_b}" ]
+	[ -f "${PORT_ETC}/repos.conf/repo-a.conf" ]
+	[ -f "${PORT_ETC}/repos.conf/repo-b.conf" ]
+	[ -L "${active}/broken-link" ]
+	[[ "${output}" == *'rolled back'* ]]
+}
+
 # --- dep-cache cleanup: stale entries are actually removed (regression) ---
 
 @test "overlays: stale dep-cache entries are removed and the loop terminates" {

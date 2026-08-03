@@ -59,7 +59,7 @@ teardown() {
 @test "world_backup: tarball filename matches world_<timestamp>.tar.bz2 pattern" {
 	world_backup
 	run ls "${BRDIR}/world/"
-	[[ "${output}" =~ ^world_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+:[0-9]+\.tar\.bz2$ ]]
+	[[ "${output}" =~ ^world_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+:[0-9]+:[0-9]+\.tar\.bz2$ ]]
 }
 
 @test "world_backup: tarball contains the world file" {
@@ -137,4 +137,20 @@ teardown() {
 	world_backup
 	run ls "${BRDIR}/world/world_24.01.02-00:00.tar.bz2"
 	assert_success
+}
+
+@test "world_backup: creation failure retains all old snapshots" {
+	COUNT=2
+	mkdir -p "${BRDIR}/world"
+	: > "${BRDIR}/world/world_24.01.01-00:00.tar.bz2"
+	: > "${BRDIR}/world/world_24.01.02-00:00.tar.bz2"
+	touch -d '2 days ago' "${BRDIR}/world/world_24.01.01-00:00.tar.bz2"
+	touch -d '1 day ago' "${BRDIR}/world/world_24.01.02-00:00.tar.bz2"
+	touch "${WORLD}"
+	local before
+	before="$(find "${BRDIR}/world" -maxdepth 1 -type f -printf '%f\n' | sort)"
+	tar() { return 1; }
+	run world_backup
+	[ "$status" -ne 0 ]
+	[[ "$(find "${BRDIR}/world" -maxdepth 1 -type f -printf '%f\n' | sort)" == "${before}" ]]
 }

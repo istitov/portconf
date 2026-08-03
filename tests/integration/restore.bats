@@ -3,8 +3,8 @@
 # handlers.  Both wrap the shared restore() helper which:
 #   1. Lists existing tarballs under arg1 (BRDIR or BRDIR/world).
 #   2. Presents them via `select` (PS3 prompt).
-#   3. On selection, wipes the destination's contents (arg5) and extracts
-#      the chosen tarball into arg4.
+#   3. Validates every member, extracts into a same-filesystem staging dir,
+#      and swaps the completed target through the shared undo journal.
 #
 # `select` reads its choice from stdin in bash, so the same stdin-piping
 # technique used in overlays.bats works here — no expect harness needed.
@@ -155,7 +155,7 @@ load 'test_helper'
 	printf 'this is not a tarball\n' > "${BRDIR}/portage_24.01.01-12:00.tar.bz2"
 	run etc_restore <<< "1"
 	[ "$status" -eq 1 ]
-	[[ "${output}" == *'unreadable or corrupt'* ]]
+	[[ "${output}" == *'unsafe, unreadable, or corrupt'* ]]
 	# The live tree must be untouched.
 	run cat "${PORT_ETC}/should_survive"
 	assert_output 'KEEP'
@@ -191,5 +191,72 @@ load 'test_helper'
 	run etc_restore <<< "1"
 	[ "$status" -eq 0 ]
 	[[ "${output}" == *'No backups'* ]]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: sibling-prefix member is rejected without an out-of-root write" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage-sibling"
+	printf 'KEEP\n' > "${PORT_ETC}/should_survive"
+	printf 'ESCAPE\n' > "${TEST_ROOT}/staging/portage-sibling/owned"
+	tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage-sibling
+	run etc_restore <<< "1"
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'unsafe, unreadable, or corrupt'* ]]
+	[[ "$(cat "${PORT_ETC}/should_survive")" == 'KEEP' ]]
+	[ ! -e "${TEST_ROOT}/etc/portage-sibling" ]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: extraction failure leaves the live tree intact" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage"
+	printf 'KEEP\n' > "${PORT_ETC}/should_survive"
+	printf 'NEW\n' > "${TEST_ROOT}/staging/portage/new-file"
+	command tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	tar() {
+		[[ "$1" == "--extract" ]] && return 1
+		command tar "$@"
+	}
+	run etc_restore <<< "1"
+	[ "$status" -eq 1 ]
+	[[ "${output}" == *'live target unchanged'* ]]
+	[[ "$(command cat "${PORT_ETC}/should_survive")" == 'KEEP' ]]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: failed final rename rolls the original tree back" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage"
+	printf 'KEEP\n' > "${PORT_ETC}/should_survive"
+	printf 'NEW\n' > "${TEST_ROOT}/staging/portage/new-file"
+	command tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	local failed=""
+	mv() {
+		if [[ -z "${failed}" && "$3" == "${PORT_ETC}" ]];then
+			failed=1
+			return 1
+		fi
+		command mv "$@"
+	}
+	run etc_restore <<< "1"
+	[ "$status" -eq 1 ]
+	[[ "$(command cat "${PORT_ETC}/should_survive")" == 'KEEP' ]]
+	[ ! -e "${PORT_ETC}/new-file" ]
 	rm -rf "${TEST_ROOT}"
 }

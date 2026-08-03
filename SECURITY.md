@@ -40,6 +40,11 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
   Dry-run covers all persistent state, including backup archives, restores,
   layout conversions, overlay cleanup, and world-file operations.
 
+- **Transaction bypass or rollback failure** — an ordinary tool/write error
+  that leaves a partially converted configuration, a missing world file, an
+  incomplete restore, or only some selected repositories removed.  Backup
+  creation failures must retain all previously published snapshots.
+
 - **`qatom -F` re-parse drift** — silent misclassification of mask
   atoms when a future `portage-utils` reshuffles the `qatom` output
   format.  The 2.0.0 `7e5ccd7` (`package_envs` modernised for qatom

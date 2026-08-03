@@ -50,15 +50,182 @@ fi
 # parent array stayed empty and the EXIT-trap cleanup removed nothing.  An append
 # to a FILE survives the subshell, so _cleanup reads every path back in the parent.
 _tmpfile_list="$(mktemp 2>/dev/null)" || _tmpfile_list=""
+
+# One process-wide undo journal for destructive multi-step operations.  Each
+# recorded target gets a private holder in its own parent directory, keeping
+# every final rename on the target filesystem.  _cleanup rolls an open journal
+# back on any ordinary shell exit; commit only discards the saved originals
+# after the whole operation has succeeded.
+_txn_open=""
+declare -a _txn_targets=() _txn_holders=() _txn_had_original=()
+
+_txn_begin() {
+	if [[ -n "${_txn_open}" ]];then
+		printf '%s\n' "internal error: nested portconf transaction" >&2
+		return 1
+	fi
+	_txn_targets=()
+	_txn_holders=()
+	_txn_had_original=()
+	_txn_open=1
+}
+
+_txn_new_holder() {
+	local target="$1" parent base
+	parent="${target%/*}"
+	base="${target##*/}"
+	[[ "${parent}" == "${target}" ]] && parent="."
+	mktemp -d -p "${parent}" ".${base}.portconf-txn.XXXXXX"
+}
+
+# Save a copy while leaving TARGET live.  Used when an external tool (eselect)
+# must see and edit the original path before commit.
+_txn_snapshot() {
+	local target="$1" holder
+	[[ -n "${_txn_open}" ]] || return 1
+	[[ -e "${target}" || -L "${target}" ]] || return 0
+	holder="$(_txn_new_holder "${target}")" || {
+		_txn_rollback || true
+		return 1
+	}
+	if ! cp -a -- "${target}" "${holder}/original";then
+		rm -rf -- "${holder}"
+		_txn_rollback || true
+		return 1
+	fi
+	_txn_targets+=("${target}")
+	_txn_holders+=("${holder}")
+	_txn_had_original+=(1)
+}
+
+# Move TARGET out of the live namespace but keep it recoverable until commit.
+_txn_quarantine() {
+	local target="$1" holder
+	[[ -n "${_txn_open}" ]] || return 1
+	[[ -e "${target}" || -L "${target}" ]] || return 0
+	holder="$(_txn_new_holder "${target}")" || {
+		_txn_rollback || true
+		return 1
+	}
+	if ! mv -- "${target}" "${holder}/original";then
+		rm -rf -- "${holder}"
+		_txn_rollback || true
+		return 1
+	fi
+	_txn_targets+=("${target}")
+	_txn_holders+=("${holder}")
+	_txn_had_original+=(1)
+}
+
+# Install a fully-built STAGED path at TARGET, retaining TARGET in the undo
+# journal.  STAGED must be in TARGET's parent when atomic rename semantics are
+# required; _mktemp_near supplies exactly that layout.
+_txn_replace() {
+	local staged="$1" target="$2" holder had=0
+	[[ -n "${_txn_open}" ]] || return 1
+	[[ -e "${staged}" || -L "${staged}" ]] || {
+		_txn_rollback || true
+		return 1
+	}
+	holder="$(_txn_new_holder "${target}")" || {
+		_txn_rollback || true
+		return 1
+	}
+	if [[ -e "${target}" || -L "${target}" ]];then
+		if ! mv -- "${target}" "${holder}/original";then
+			rm -rf -- "${holder}"
+			_txn_rollback || true
+			return 1
+		fi
+		had=1
+	fi
+	_txn_targets+=("${target}")
+	_txn_holders+=("${holder}")
+	_txn_had_original+=("${had}")
+	if ! mv -- "${staged}" "${target}";then
+		_txn_rollback
+		return 1
+	fi
+}
+
+_txn_rollback() {
+	local i target holder had current rc=0 resolved
+	[[ -n "${_txn_open}" ]] || return 0
+	# Mark closed first so a failure during rollback cannot recursively replay a
+	# half-consumed journal from the EXIT trap.
+	_txn_open=""
+	for (( i=${#_txn_targets[@]}-1; i>=0; i-- ));do
+		target="${_txn_targets[i]}"
+		holder="${_txn_holders[i]}"
+		had="${_txn_had_original[i]}"
+		resolved=1
+		if [[ "${had}" == 1 ]];then
+			if [[ ! -e "${holder}/original" && ! -L "${holder}/original" ]];then
+				# The saved original has disappeared.  Do not compound that loss by
+				# deleting a replacement that is still live.
+				rc=1
+				resolved=""
+			else
+				current="${holder}/replacement"
+				if [[ -e "${target}" || -L "${target}" ]];then
+					if ! mv -- "${target}" "${current}";then
+						rc=1
+						resolved=""
+					fi
+				fi
+				if [[ -n "${resolved}" ]] && ! mv -- "${holder}/original" "${target}";then
+					rc=1
+					resolved=""
+					# Put the replacement back if restoring the original failed.  Both
+					# copies then remain available instead of leaving TARGET missing.
+					if [[ -e "${current}" || -L "${current}" ]];then
+						mv -- "${current}" "${target}" || true
+					fi
+				fi
+			fi
+		elif [[ -e "${target}" || -L "${target}" ]];then
+			rm -rf -- "${target}" || { rc=1; resolved=""; }
+		fi
+		if [[ -n "${resolved}" ]];then
+			rm -rf -- "${holder}" || rc=1
+		fi
+	done
+	_txn_targets=()
+	_txn_holders=()
+	_txn_had_original=()
+	return "${rc}"
+}
+
+_txn_commit() {
+	local -a holders=("${_txn_holders[@]}")
+	local holder rc=0
+	[[ -n "${_txn_open}" ]] || return 0
+	# The new state is committed before old copies are garbage-collected.  A
+	# cleanup failure therefore leaves a recoverable holder, never a half-rollback.
+	_txn_open=""
+	_txn_targets=()
+	_txn_holders=()
+	_txn_had_original=()
+	for holder in "${holders[@]}";do
+		rm -rf -- "${holder}" || rc=1
+	done
+	return "${rc}"
+}
+
 # _cleanup: remove every temp file registered via _mktemp; runs from the EXIT trap.
 _cleanup() {
+	[[ -z "${_txn_open:-}" ]] || _txn_rollback || true
 	[[ -n "${_tmpfile_list}" && -f "${_tmpfile_list}" ]] || return 0
 	local f
 	while IFS= read -r f;do
 		[[ -n "${f}" ]] || continue
-		rm -f "${f}"
+		if [[ -d "${f}" && ! -L "${f}" ]];then
+			rm -rf -- "${f}"
+		else
+			rm -f -- "${f}"
+		fi
 	done < "${_tmpfile_list}"
-	rm -f "${_tmpfile_list}"
+	rm -f -- "${_tmpfile_list}"
 	return 0
 }
 trap _cleanup EXIT
@@ -67,6 +234,23 @@ trap _cleanup EXIT
 _mktemp() {
 	local f
 	f="$(mktemp "$@")"
+	[[ -n "${_tmpfile_list}" ]] && printf '%s\n' "${f}" >> "${_tmpfile_list}"
+	printf '%s\n' "${f}"
+}
+
+# Create a tracked staging file or directory beside TARGET.  A later mv to
+# TARGET is therefore a same-filesystem rename instead of a /tmp cross-device
+# copy-and-delete.
+_mktemp_near() {
+	local target="$1" kind="${2:-file}" parent base f
+	parent="${target%/*}"
+	base="${target##*/}"
+	[[ "${parent}" == "${target}" ]] && parent="."
+	if [[ "${kind}" == "dir" ]];then
+		f="$(mktemp -d -p "${parent}" ".${base}.portconf-stage.XXXXXX")"
+	else
+		f="$(mktemp -p "${parent}" ".${base}.portconf-stage.XXXXXX")"
+	fi
 	[[ -n "${_tmpfile_list}" ]] && printf '%s\n' "${f}" >> "${_tmpfile_list}"
 	printf '%s\n' "${f}"
 }
@@ -370,6 +554,19 @@ PORTDIR="${PORTDIR:-/var/db/repos/gentoo}"
 timestamp(){
 	stat -c %Y "${@}" 2>/dev/null | sort | tail -n1 || true
 }
+
+# Enforce retention only after a new, verified archive is published.  Keeping
+# at least one snapshot preserves the historical COUNT=0 behaviour.
+_rotate_archives() {
+	local dir="$1" prefix="$2" keep="$3"
+	local -a archives=()
+	(( keep < 1 )) && keep=1
+	while true;do
+		mapfile -t archives < <(find "${dir}" -maxdepth 1 -type f -name "${prefix}_*.tar.bz2" -printf '%f\n' | sort)
+		(( ${#archives[@]} <= keep )) && return 0
+		rm -- "${dir}/${archives[0]}" || return 1
+	done
+}
 # ============================================================================
 # === EIX BOOTSTRAP
 # === repo_fix, rm_repo_fix, eix_check, eix_method.  -rc/--regen-cache builds a
@@ -469,27 +666,22 @@ eix_method(){
 
 # backup: tar $PORT_ETC to $BRDIR with rotation; dry-run only reports intent.
 backup(){
+	local port_parent port_name legacy_makeconf="" etc_update portconf_update
+	local name draft
 	if _action_is pretend;then
 		printf '%b\n' "${PORT_ETC} backup: ${contrast}dry-run${restore}, no archive written"
 		return 0
 	fi
 	[[ -d "${BRDIR}" ]] || mkdir -p "${BRDIR}"
-	tarballs="$(ls -1 --color=never "${BRDIR}")"
-	oldest="$(head -n1 <<< "${tarballs}")"
-	# `wc -l <<< ""` counts 1 (the here-string's trailing newline), so an empty
-	# backup dir would report count=1 and, with COUNT=1, rm the (empty) oldest --
-	# `rm "${BRDIR}/"` then fails and aborts the first backup under set -e.
-	if [[ -z "${tarballs}" ]];then count=0;else count="$( wc -l <<< "${tarballs}")";fi
 	# Derive the tar working dir from PORT_ETC instead of hardcoding /etc/,
 	# so test sandboxes (PORT_ETC=/tmp/foo/portage) don't accidentally tar
 	# the host's real /etc/portage tree.
-	local port_parent="${PORT_ETC%/*}"
-	local port_name="${PORT_ETC##*/}"
+	port_parent="${PORT_ETC%/*}"
+	port_name="${PORT_ETC##*/}"
 	# Pre-2.2-portage systems kept make.conf at /etc/make.conf instead of
 	# inside the config dir.  Honor it only when PORT_ETC is at its default
 	# location — a sandboxed PORT_ETC must never pull the host's real
 	# /etc/make.conf into a test tarball.
-	local legacy_makeconf=""
 	[[ "${PORT_ETC}" == "/etc/portage" && -f "/etc/make.conf" ]] && legacy_makeconf="/etc/make.conf"
 	if [[ -n "${legacy_makeconf}" ]];then
 		etc_update="$(timestamp "${PORT_ETC}"/{*,*/*,*/*/*,*/*/*/*} "${legacy_makeconf}")"
@@ -501,20 +693,35 @@ backup(){
 	# arithmetic syntax error and falls through to "already up-to-date" — wrongly
 	# skipping the backup. Mirrors the portconf_update default just below.
 	etc_update="${etc_update:-0}"
-	portconf_update="$(timestamp "${BRDIR}"/*)"
+	# World snapshots live below BRDIR/world and must not suppress a newer
+	# /etc/portage snapshot.
+	portconf_update="$(timestamp "${BRDIR}"/portage_*.tar.bz2)"
 	portconf_update="${portconf_update:-0}"
 	if (( "${etc_update}" > "${portconf_update}" ));then
-		if (( "${count}" >= "${COUNT}" ));then
-			rm "${BRDIR}/${oldest}"
-		fi
 		printf '%b\n' "${PORT_ETC} backup: ${green}creating${restore}..."
-		name="${BRDIR}/portage_$(date +%g.%m.%d-%H:%M).tar.bz2"
+		name="${BRDIR}/portage_$(date +%g.%m.%d-%H:%M:%S).tar.bz2"
+		draft="$(_mktemp_near "${name}")"
 		if [[ -n "${legacy_makeconf}" ]];then
-			tar -jcf "${name}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}"
+			tar -jcf "${draft}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}" || {
+				rm -f -- "${draft}"
+				printf '%b\n' "${red}Backup creation failed${restore}; existing snapshots retained"
+				return 1
+			}
 		else
-			tar -jcf "${name}" -C "${port_parent}/" "${port_name}"
+			tar -jcf "${draft}" -C "${port_parent}/" "${port_name}" || {
+				rm -f -- "${draft}"
+				printf '%b\n' "${red}Backup creation failed${restore}; existing snapshots retained"
+				return 1
+			}
 		fi
-		eend $? 2>/dev/null
+		if ! tar -tf "${draft}" >/dev/null 2>&1;then
+			rm -f -- "${draft}"
+			printf '%b\n' "${red}Backup verification failed${restore}; existing snapshots retained"
+			return 1
+		fi
+		mv -- "${draft}" "${name}" || return 1
+		_rotate_archives "${BRDIR}" portage "${COUNT}" || return 1
+		eend 0 2>/dev/null
 	else
 		printf '%b\n' "${PORT_ETC} backups: ${green}already up-to-date${restore}"
 		eend $? 2>/dev/null
@@ -522,37 +729,85 @@ backup(){
 }
 # world_backup: tar the world file to $BRDIR/world/ with rotation; idempotent on no-change.
 world_backup(){
+	local world_dir world_update portconf_update name draft
 	if _action_is pretend;then
 		printf '%b\n' "world backup: ${contrast}dry-run${restore}, no archive written"
 		return 0
 	fi
 	world_dir="${BRDIR}/world"
 	[[ -d "${world_dir}" ]] || mkdir -p "${world_dir}"
-	tarballs="$(ls -1 --color=never "${world_dir}")"
-	oldest="$(head -n1 <<< "${tarballs}")"
-	# `wc -l <<< ""` counts 1 (the here-string's trailing newline), so an empty
-	# backup dir would report count=1 and, with COUNT=1, rm the (empty) oldest --
-	# `rm "${BRDIR}/"` then fails and aborts the first backup under set -e.
-	if [[ -z "${tarballs}" ]];then count=0;else count="$( wc -l <<< "${tarballs}")";fi
 	world_update="$(timestamp "${WORLD}")"
-	portconf_update="$(timestamp "${world_dir}"/*)"
+	world_update="${world_update:-0}"
+	portconf_update="$(timestamp "${world_dir}"/world_*.tar.bz2)"
 	portconf_update="${portconf_update:-0}"
 	if (( "${world_update}" > "${portconf_update}" ));then
-		if (( "${count}" >= "${COUNT}" ));then
-			rm "${world_dir}/${oldest}"
-		fi
 		printf '%b\n' "world backup: ${green}creating${restore}..."
-		name="${world_dir}/world_$(date +%g.%m.%d-%H:%M).tar.bz2"
-		tar -jcf "${name}" -C "${WORLD%world}" world
-		eend $? 2>/dev/null
+		name="${world_dir}/world_$(date +%g.%m.%d-%H:%M:%S).tar.bz2"
+		draft="$(_mktemp_near "${name}")"
+		tar -jcf "${draft}" -C "${WORLD%/*}" "${WORLD##*/}" || {
+			rm -f -- "${draft}"
+			printf '%b\n' "${red}World backup creation failed${restore}; existing snapshots retained"
+			return 1
+		}
+		if ! tar -tf "${draft}" >/dev/null 2>&1;then
+			rm -f -- "${draft}"
+			printf '%b\n' "${red}World backup verification failed${restore}; existing snapshots retained"
+			return 1
+		fi
+		mv -- "${draft}" "${name}" || return 1
+		_rotate_archives "${world_dir}" world "${COUNT}" || return 1
+		eend 0 2>/dev/null
 	else
 		printf '%b\n' "world backups: ${green}already up-to-date${restore}"
 		eend $? 2>/dev/null
 	fi
 }
-# restore: interactive — pick a backup tarball and extract over the target tree.
+# Validate both archive structure and member types before extraction.  Directory
+# restores accept the canonical "portage" root and the configured target's
+# basename (older sandbox/custom-root backups used the latter).  A legacy
+# /etc/make.conf sibling is accepted only for the real /etc/portage target.
+_validate_restore_archive() {
+	local src="$1" kind="$2" prefix="$3" target="$4"
+	local members raw member first root="" target_base="${target##*/}"
+	members="$(tar -tf "${src}" 2>/dev/null)" || return 1
+	[[ -n "${members}" ]] || return 1
+	if ! tar -tvf "${src}" 2>/dev/null | awk '
+		BEGIN { bad=0 }
+		{ type=substr($0,1,1); if (type !~ /^[-dlh]$/) bad=1 }
+		END { exit bad }
+	';then
+		return 1
+	fi
+	while IFS= read -r raw;do
+		member="${raw}"
+		while [[ "${member}" == ./* ]];do member="${member#./}";done
+		member="${member%/}"
+		[[ -n "${member}" && "${member}" != /* ]] || return 1
+		case "/${member}/" in *"/../"*) return 1;; esac
+		if [[ "${kind}" == "file" ]];then
+			[[ "${member}" == "${prefix}" || "${member}" == "${target_base}" ]] || return 1
+			root="${member}"
+			continue
+		fi
+		first="${member%%/*}"
+		if [[ "${first}" == "make.conf" ]];then
+			[[ "${target}" == "/etc/portage" && "${member}" == "make.conf" ]] || return 1
+			continue
+		fi
+		[[ "${first}" == "${prefix}" || "${first}" == "${target_base}" ]] || return 1
+		if [[ -z "${root}" ]];then
+			root="${first}"
+		elif [[ "${first}" != "${root}" ]];then
+			return 1
+		fi
+	done <<< "${members}"
+	[[ -n "${root}" ]] || return 1
+	_restore_root="${root}"
+}
+
+# restore: select, validate, stage, and atomically replace a saved target.
 restore(){
-	local tarballs src answer
+	local tarballs src answer target="$4" kind="$5" stage desired
 	# Guard the listing: a glob with no match makes `ls` exit non-zero, which
 	# would abort the whole run under set -e instead of saying "no backups".
 	tarballs="$(ls -1 --color=never "${1}"/*.bz2 2>/dev/null || true)"
@@ -586,37 +841,49 @@ restore(){
 		done
 	fi
 	src="${1}/${2}_${answer}.tar.bz2"
-	# Validate the archive BEFORE touching the live tree.  The old code
-	# wiped $5 first and swallowed a failed extract, so a corrupt/truncated
-	# tarball left the target EMPTY with no way back.  `tar -t` it first and
-	# bail untouched on failure.
-	if ! tar -tf "${src}" >/dev/null 2>&1;then
-		printf '%b\n' "${red}Backup ${answer} is unreadable or corrupt${restore}; nothing changed"
+	_restore_root=""
+	if ! _validate_restore_archive "${src}" "${kind}" "$2" "${target}";then
+		printf '%b\n' "${red}Backup ${answer} is unsafe, unreadable, or corrupt${restore}; nothing changed"
 		return 1
 	fi
 	printf '%b\n' "Rolling back ${3} to the state ${green}${answer}${restore}"
-	# $5 (optional) is the dir whose CONTENTS are wiped before extracting
-	# (so the restore is authoritative -- leftover files don't survive).
-	# find -delete handles an empty dir + weird names; ${5:-} is required
-	# under set -u for the 4-arg (world_restore) callers.
-	[[ -n "${5:-}" && -d "${5:-}" ]] && find "${5}" -mindepth 1 -delete 2>/dev/null
-	if tar -xf "${src}" -C "${4}" 2>/dev/null;then
-		eend 0 2>/dev/null
-	else
-		printf '%b\n' "${red}Extract failed${restore} for ${answer} (target may be incomplete)"
-		eend 1 2>/dev/null
+	stage="$(_mktemp_near "${target}" dir)" || return 1
+	if ! tar --extract --file="${src}" --directory="${stage}" --no-same-owner --no-same-permissions 2>/dev/null;then
+		printf '%b\n' "${red}Extract failed${restore} for ${answer}; live target unchanged"
+		return 1
 	fi
+	desired="${stage}/${_restore_root}"
+	if [[ "${kind}" == "dir" ]];then
+		[[ -d "${desired}" && ! -L "${desired}" ]] || {
+			printf '%b\n' "${red}Backup root is not a directory${restore}; live target unchanged"
+			return 1
+		}
+	else
+		[[ -f "${desired}" && ! -L "${desired}" ]] || {
+			printf '%b\n' "${red}Backup root is not a regular file${restore}; live target unchanged"
+			return 1
+		}
+	fi
+	_txn_begin || return 1
+	_txn_replace "${desired}" "${target}" || return 1
+	# Pre-2.2 Portage backups may also contain /etc/make.conf.  Stage and swap
+	# it in the same journal so either both paths change or neither does.
+	if [[ "${target}" == "/etc/portage" && -e "${stage}/make.conf" ]];then
+		_txn_replace "${stage}/make.conf" "/etc/make.conf" || return 1
+	fi
+	_txn_commit || {
+		printf '%b\n' "${red}Restore committed, but an old transaction holder could not be removed${restore}"
+		return 1
+	}
+	eend 0 2>/dev/null
 }
 # etc_restore: wrapper — restore() applied to the /etc/portage snapshot set.
 etc_restore(){
-	# Tar extract destination is the parent dir of PORT_ETC (the tarball
-	# contains a "portage" subdir as its top-level entry — see backup()).
-	# 5th arg = PORT_ETC itself: restore() wipes its contents before extract.
-	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC%/*}/" "${PORT_ETC}"
+	restore "${BRDIR}" "portage" "${PORT_ETC}" "${PORT_ETC}" dir
 }
 # world_restore: wrapper — restore() applied to the world-file snapshot set.
 world_restore(){
-	restore "${BRDIR}/world" "world" "${WORLD}" "${WORLD%world}"
+	restore "${BRDIR}/world" "world" "${WORLD}" "${WORLD}" file
 }
 # ============================================================================
 # === INTERACTIVE PROMPTS
@@ -1958,6 +2225,8 @@ f_to_d(){
 	# so a mid-loop early-exit doesn't leave globbing disabled for the
 	# rest of the dispatch chain.
 	local -
+	local -a convert_targets=() convert_stages=()
+	local qatom_output i
 	while IFS= read -r package;do
 		if [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
@@ -1968,15 +2237,19 @@ f_to_d(){
 				continue
 			fi
 			_confirm_action "Convert ${package##*/} from file to directory?" || continue
-			tmp_file="$(_mktemp)"
-			mv "${package}" "${tmp_file}" 2>/dev/null
-			sed -e 's|^#.*||g' -i "${tmp_file}"
-			dir="${PORT_ETC}/${package##*/}"
-			mkdir "${dir}"
+			dir="$(_mktemp_near "${package}" dir)" || return 1
 			set -f
 			while IFS= read -r line;do
+				# File-to-directory conversion intentionally drops whole-line
+				# comments, matching the documented historical behaviour.
+				[[ "${line}" == \#* ]] && continue
 				atom="$(awk '{print $1}' <<< "${line}")"
-				category="$(awk '{print $1}' <<< "$(qatom "${atom}")")"
+				[[ -n "${atom}" ]] || continue
+				if ! qatom_output="$(qatom "${atom}")";then
+					printf '%b\n' "${red}Could not parse atom${restore}: ${atom}; ${package} unchanged"
+					return 1
+				fi
+				category="$(awk '{print $1}' <<< "${qatom_output}")"
 				# Skip non-atoms: a blank / comment-blanked line gives an empty
 				# atom and qatom reports category "(null)" (legacy) or "<unset>"
 				# (portage-utils 0.97+) — without this guard those lines were
@@ -1986,11 +2259,10 @@ f_to_d(){
 					[[ "${category}" == "*" ]] && category="all_categories"
 					echo "${line}" >> "${dir}/${category}"
 				fi
-			done < "${tmp_file}"
+			done < "${package}"
 			set +f
-			eend $? 2>/dev/null
-			rm "${tmp_file}" 2>/dev/null
-			_changes_applied=$(( _changes_applied + 1 ))
+			convert_targets+=("${package}")
+			convert_stages+=("${dir}")
 		elif [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Skipping ${red}directory${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
@@ -2002,9 +2274,19 @@ f_to_d(){
 			printf '%s\n' "${package}"
 		done
 	)"
+	(( ${#convert_targets[@]} > 0 )) || return 0
+	_txn_begin || return 1
+	for (( i=0; i<${#convert_targets[@]}; i++ ));do
+		_txn_replace "${convert_stages[i]}" "${convert_targets[i]}" || return 1
+	done
+	_txn_commit || return 1
+	_changes_applied=$(( _changes_applied + ${#convert_targets[@]} ))
+	eend 0 2>/dev/null
 }
 # d_to_f: convert package.* from directory layout back to flat-file.
 d_to_f(){
+	local -a convert_targets=() convert_stages=()
+	local i
 	while IFS= read -r package;do
 		if [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
@@ -2015,20 +2297,18 @@ d_to_f(){
 				continue
 			fi
 			_confirm_action "Convert ${package##*/} from directory to file?" || continue
-			tmp_file="$(_mktemp)"
-			file="${PORT_ETC}/${package##*/}"
-			touch "${file}"
+			tmp_file="$(_mktemp_near "${package}")" || return 1
 			while IFS= read -r subfile; do
 				# cat, not a `while read line; echo` loop: read without -r
 				# mangles backslashes and the default IFS strips leading
 				# whitespace -- cat copies each sub-file's bytes verbatim.
-				cat "${subfile}" >> "${tmp_file}"
+				if ! cat "${subfile}" >> "${tmp_file}";then
+					printf '%b\n' "${red}Could not read${restore} ${subfile}; ${package} unchanged"
+					return 1
+				fi
 			done < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
-			rm -rf "${package}" 2>/dev/null
-			mv "${tmp_file}" "${package}" 2>/dev/null
-			chmod 0644 "${package}"
-			_changes_applied=$(( _changes_applied + 1 ))
-			eend $? 2>/dev/null
+			convert_targets+=("${package}")
+			convert_stages+=("${tmp_file}")
 		elif [[ -f "${package}" ]];then
 			printf '%b\n' "${underline}Skipping ${red}file${restore}: ${contrast}${package##*/}${restore}"
 			eend $? 2>/dev/null
@@ -2040,6 +2320,15 @@ d_to_f(){
 			printf '%s\n' "${package}"
 		done
 	)"
+	(( ${#convert_targets[@]} > 0 )) || return 0
+	_txn_begin || return 1
+	for (( i=0; i<${#convert_targets[@]}; i++ ));do
+		_txn_replace "${convert_stages[i]}" "${convert_targets[i]}" || return 1
+		chmod 0644 "${convert_targets[i]}"
+	done
+	_txn_commit || return 1
+	_changes_applied=$(( _changes_applied + ${#convert_targets[@]} ))
+	eend 0 2>/dev/null
 }
 # ============================================================================
 # === VERSION COMPARE
@@ -2452,6 +2741,8 @@ check_use_masked() {
 
 # regen_world: rebuild $WORLD: keep installed atoms not pulled in by `emerge -eopd --with-bdeps=y world` (filtered through `emerge -epO system` + qlist), excluding virtuals/*-libs; then interactively walk `emerge -pc` candidates.
 regen_world(){
+	local installed seed tmp_world desired emerge_log pre_pre
+	local _system_output _system_atoms _system_installed depclean_output
 	if _action_is pretend;then
 		_changes_seen=1
 		_changes_found=$(( _changes_found + 1 ))
@@ -2459,22 +2750,25 @@ regen_world(){
 		return 0
 	fi
 	notrash_pkgs=""
-	tmp_world="$(_mktemp)"
-	ex_world="$(_mktemp)"
+	# Resolve installed packages before opening the transaction.  A qlist
+	# failure therefore cannot move or replace the live world file.
+	if ! installed="$(qlist -CI | sort -u)";then
+		printf '%b\n' "${red}Could not list installed packages${restore}; ${WORLD} unchanged"
+		return 1
+	fi
+	seed="$(_mktemp_near "${WORLD}")" || return 1
+	printf '%s\n' "${installed}" > "${seed}"
+	_txn_begin || return 1
+	_txn_replace "${seed}" "${WORLD}" || return 1
 	emerge_log="$(_mktemp)"
-	mv "${WORLD}" "${ex_world}"
-	installed="$(qlist -CI | sort -u)"
-	echo "${installed}" > "${WORLD}"
 	printf '%b\n' "Calculating dependencies"
 
-	pre_pre="$(emerge -eopd --columns --with-bdeps=y world 2>"${emerge_log}")" || {
-		mv "${ex_world}" "${WORLD}"
+	if ! pre_pre="$(emerge -eopd --columns --with-bdeps=y world 2>"${emerge_log}")";then
 		cat "${emerge_log}"
-		rm "${tmp_world}" "${emerge_log}"
-		printf '%b\n' "\n${red}ERROR!!!${restore} exit\n"
-		exit 1
-	}
-	rm "${emerge_log}"
+		_txn_rollback || true
+		printf '%b\n' "\n${red}Dependency calculation failed${restore}; ${WORLD} restored"
+		return 1
+	fi
 
 	pretend="$(grep -v "blocks" <<< "${pre_pre}" | awk '/^\[/ {print $4}' || true)" && eend 0 2>/dev/null
 	# Command substitution strips trailing newlines, so `pretend` does NOT
@@ -2490,19 +2784,34 @@ regen_world(){
 	# never get cleaned.  Skipping the append in that case is correct:
 	# system-set atoms only narrow pretend; they don't add anything that
 	# wasn't already covered by the eopd output above.
-	_system_atoms="$(emerge -epO system 2>/dev/null | awk '/\[/ {print $4}' || true)"
-	if [[ -n "${_system_atoms}" ]];then
-		pretend+=$'\n'"$(qlist -CI ${_system_atoms} || true)"$'\n'
+	: > "${emerge_log}"
+	if ! _system_output="$(emerge -epO system 2>"${emerge_log}")";then
+		cat "${emerge_log}"
+		_txn_rollback || true
+		printf '%b\n' "${red}System-set calculation failed${restore}; ${WORLD} restored"
+		return 1
 	fi
-	unset _system_atoms
+	_system_atoms="$(awk '/\[/ {print $4}' <<< "${_system_output}" || true)"
+	if [[ -n "${_system_atoms}" ]];then
+		# shellcheck disable=SC2086  # qlist expects one argument per atom.
+		if ! _system_installed="$(qlist -CI ${_system_atoms})";then
+			_txn_rollback || true
+			printf '%b\n' "${red}Could not resolve installed system packages${restore}; ${WORLD} restored"
+			return 1
+		fi
+		pretend+=$'\n'"${_system_installed}"$'\n'
+	fi
 
+	tmp_world="$(_mktemp_near "${WORLD}")" || { _txn_rollback || true; return 1; }
 	for atom in ${installed};do
 		if ! grep -q "^${atom}$" <<< "${pretend}" && ! grep -q ".*-libs/" <<< "${atom}" && ! grep -q "virtual/" <<< "${atom}";then
 				echo "${atom}" >> "${tmp_world}"
 				printf '%b\n' "world++: ${green}${atom}${restore}"
 		fi
 	done
-	cp "${tmp_world}" "${WORLD}"
+	# Install the fully-built depclean draft while the original remains in the
+	# open undo journal.  emerge -pc/-Own can now operate normally against it.
+	mv -- "${tmp_world}" "${WORLD}"
 
 	PS3="$(printf '%b\n' "${contrast}Choose package which you want save:${restore} ")"
 	choose_target(){
@@ -2518,9 +2827,19 @@ regen_world(){
 		done
 	}
 	ask(){
-		pretend="$(emerge -pc | grep 'All selected packages:' | sed 's|.*:||1' | tr ' ' $'\n' || true)"
+		if ! depclean_output="$(emerge -pc)";then
+			printf '%b\n' "${red}emerge -pc failed${restore}"
+			return 1
+		fi
+		pretend="$(grep 'All selected packages:' <<< "${depclean_output}" | sed 's|.*:||1' | tr ' ' $'\n' || true)"
 		printf '%b\n' "\n${pretend// /$'\n'}"
 		if [[ -n "$(sed '/^$/d' <<< "${pretend}")" ]];then
+			# In explicit CLI force mode, keep the regenerated minimal set and do
+			# not block for package-save selections.
+			if [[ "${ACTION_MODE:-}" == "force" ]];then
+				printf '%b\n' "${contrast}Force mode:${restore} keeping the regenerated minimal world set"
+				return 0
+			fi
 			printf '%b' "\n${contrast}Would you like save some packages?${restore} [${green}Yes${restore}/${red}No${restore}] "
 			while read x;do
 				[[ -z "$(sed '/^$/d' <<< "${pretend}")" ]] && break
@@ -2549,7 +2868,13 @@ regen_world(){
 						continue;;
 				esac
 			done
-			[[ -n "$(sed '/^$/d' <<< "${notrash_pkgs}")" ]] && emerge -Own ${notrash_pkgs}
+			if [[ -n "$(sed '/^$/d' <<< "${notrash_pkgs}")" ]];then
+				# shellcheck disable=SC2086  # emerge expects one argument per atom.
+				if ! emerge -Own ${notrash_pkgs};then
+					printf '%b\n' "${red}Could not save selected packages in world${restore}"
+					return 1
+				fi
+			fi
 		else
 			return 0
 		fi
@@ -2557,13 +2882,17 @@ regen_world(){
 	for t in 1 2;do
 		[[ "${t}" == "1" ]] && printf '%b\n' "\nemerge -pc: ${green}check...${restore}"
 		[[ "${t}" == "2" ]] && printf '%b\n' "\nemerge -pc: ${green}recheck...${restore}"
-		ask
+		if ! ask;then
+			_txn_rollback || true
+			printf '%b\n' "${red}World regeneration aborted${restore}; ${WORLD} restored"
+			return 1
+		fi
 		unset enough
 	done
-	cp "${WORLD}" "${tmp_world}"
-	cp "${ex_world}" "${WORLD}"
-	diff_ask "${WORLD}" "${tmp_world}"
-	rm "${ex_world}"
+	desired="$(_mktemp_near "${WORLD}")" || { _txn_rollback || true; return 1; }
+	cp -- "${WORLD}" "${desired}" || { _txn_rollback || true; return 1; }
+	_txn_rollback || return 1
+	diff_ask "${WORLD}" "${desired}" || return 1
 	eend $? 2>/dev/null
 	printf '%b\n' "\n${green}Result${restore}:"
 	cat "${WORLD}"
@@ -2582,6 +2911,7 @@ overlays(){
 	used_repos=""
 	good_links=""
 	portage_overlays=""
+	remove_bad_links=""
 	# stop is set inside fix_deps() when there's nothing left to clean
 	# and consumed by the outer dep-cache loop.  Pre-declare to avoid
 	# `unbound variable` under set -u on the first loop iteration.
@@ -2650,10 +2980,7 @@ overlays(){
 		if _action_is pretend;then
 			printf '%b\n' "Would remove the broken symlink(s) above (${contrast}dry-run${restore})"
 		elif _confirm_action "Remove the broken symlink(s) above?";then
-			for symlink in $(awk '{print $2}' <<< "${bad_links%$'\n'}");do
-				rm -v "${symlink}"
-				eend $? 2>/dev/null
-			done
+			remove_bad_links=1
 		fi
 	fi
 
@@ -2705,6 +3032,9 @@ overlays(){
 		# the test repos.conf doesn't list every overlay the host has cache
 		# entries for.
 		TRASH=""
+		path_has_entries(){
+			find "$1" -mindepth 1 -maxdepth 1 ! -name '.*.portconf-txn.*' -print -quit | grep -q .
+		}
 		while IFS= read -r dep_path; do
 			repo_path="$(sed "s|${DEP_PATH}||" <<< "${dep_path}")"
 			dep_file="${dep_path}.sqlite"
@@ -2712,12 +3042,12 @@ overlays(){
 				if [[ ! -d "${repo_path}" ]];then
 					TRASH+="${dep_path} "
 					[[ -f "${dep_file}" ]] && TRASH+="${dep_file} "
-				elif [[ -d "${repo_path}" && ! "$(ls -A ${repo_path})" ]];then
+				elif [[ -d "${repo_path}" ]] && ! path_has_entries "${repo_path}";then
 					TRASH+="${dep_path} "
 					[[ -f "${dep_file}" ]] && TRASH+="${dep_file} "
-				elif [[ -d "${repo_path}" && ! "$(ls -A ${dep_path})" && ! -f "${dep_file}" ]];then
+				elif [[ -d "${repo_path}" ]] && ! path_has_entries "${dep_path}" && [[ ! -f "${dep_file}" ]];then
 					TRASH+="${dep_path} "
-				elif [[ -d "${repo_path}" && "$(ls -A ${dep_path})" && -f "${dep_file}" ]];then
+				elif [[ -d "${repo_path}" ]] && path_has_entries "${dep_path}" && [[ -f "${dep_file}" ]];then
 					file_stamp="$(timestamp "${dep_file}")"
 					path_stamp="$(timestamp ${dep_path}/*)"
 					if [[ -n "${file_stamp}" && -n "${path_stamp}" ]] && (( "${file_stamp}" > "${path_stamp}" ));then
@@ -2727,7 +3057,7 @@ overlays(){
 					fi
 				fi
 			fi
-		done < <(find "${DEP_PATH}" -type d)
+		done < <(find "${DEP_PATH}" -type d -name '.*.portconf-txn.*' -prune -o -type d -print)
 		if [[ -n "${TRASH}" ]];then
 			echo "${TRASH}"
 		else
@@ -2740,6 +3070,30 @@ overlays(){
 		ask
 	elif [[ -n "${UNUSED}" ]] && _action_is pretend;then
 		printf '%b\n' "Unused repos (would remove):\n${UNUSED}"
+	fi
+	if ! _action_is pretend;then
+		_txn_begin || return 1
+		if [[ -n "${remove_bad_links}" ]];then
+			for symlink in $(awk '{print $2}' <<< "${bad_links%$'\n'}");do
+				if ! _txn_quarantine "${symlink}";then
+					_txn_rollback || true
+					printf '%b\n' "${red}Could not stage broken-symlink removal${restore}; nothing changed"
+					return 1
+				fi
+			done
+		fi
+		if [[ -n "${UNUSED}" && ( -e "${PORT_ETC}/repos.conf" || -L "${PORT_ETC}/repos.conf" ) ]];then
+			_txn_snapshot "${PORT_ETC}/repos.conf" || { _txn_rollback || true; return 1; }
+		fi
+		# Move unused repository trees aside before eselect edits repos.conf.
+		# A later failure can then restore both the configuration snapshot and
+		# every repository directory already processed.
+		for repo in ${UNUSED};do
+			repo_path="$(grep " ${repo}$" <<< "${portage_overlays}" | awk '{print $1}' || true)"
+			if [[ -n "${repo_path}" && "${repo_path}" != "/" && -d "${repo_path}" ]];then
+				_txn_quarantine "${repo_path}" || { _txn_rollback || true; return 1; }
+			fi
+		done
 	fi
 	# -f: eselect refuses to remove `local` (not in its remote registry) and
 	# `no-sync-uri` overlays without it -- which covers most hand-added
@@ -2754,6 +3108,9 @@ overlays(){
 		else
 			printf '%b\n' "Could not auto-remove ${red}${repo}${restore}: run: eselect repository remove -f ${repo}"
 			eend 1 2>/dev/null
+			_txn_rollback || true
+			printf '%b\n' "${contrast}Repository cleanup rolled back; no selected repository was removed${restore}"
+			return 1
 		fi
 	done
 	printf '%b\n' "\n${TRASH_REPO}"
@@ -2765,23 +3122,28 @@ overlays(){
 				printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|would remove:\\${green}|;s|$|\\${restore}|")"
 				break
 			fi
-			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|removing:\\${green}|;s|$|\\${restore}|")"
-			# ${trash} is a space-separated list of dep-cache paths built by
-			# fix_deps -- including `${dep_path}/*` glob entries -- that MUST
-			# word-split and glob-expand into individual rm operands.  Quoting it
-			# (a `safety: quoting audit` SC2086 sweep did, commit 9ff4e65)
-			# collapsed the whole list into a single nonexistent literal path; rm
-			# -f then silently no-ops, fix_deps re-finds the identical trash next
-			# iteration, and the `while [[ -z "${stop}" ]]` loop never reaches its
-			# empty-trash break -- spinning forever on every -fr with real
-			# dep-cache to clean.  Keep it unquoted on purpose.
+			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|staging removal:\\${green}|;s|$|\\${restore}|")"
+			# fix_deps intentionally emits a space-separated list whose glob
+			# entries must expand to individual cache paths.
 			# shellcheck disable=SC2086
-			rm -rf ${trash} 2>/dev/null || { echo failed; exit 1; }
+			for trash_path in ${trash};do
+				if ! _txn_quarantine "${trash_path}";then
+					_txn_rollback || true
+					printf '%b\n' "${red}Dependency-cache cleanup failed${restore}; repository cleanup rolled back"
+					return 1
+				fi
+			done
 		else
 			break
 			
 		fi
 	done
+	if ! _action_is pretend;then
+		_txn_commit || {
+			printf '%b\n' "${red}Cleanup committed, but a quarantine holder could not be removed${restore}"
+			return 1
+		}
+	fi
 	echo "done"
 	eend 0 2>/dev/null
 }

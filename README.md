@@ -73,6 +73,13 @@ configuration-cleanup operations creates a backup tarball under
 `/var/lib/portconf/` first; use `portconf --ask --restore` to select and roll
 back to one.  `--force --restore` selects the newest backup without prompting.
 
+Applying destructive workflows uses same-filesystem staging and an undo
+journal.  Restore archives are validated and fully extracted before the live
+target is swapped; conversions, world regeneration, and repository cleanup
+roll back their whole batch on ordinary failures.  Backups are written and
+verified before publication, and retention rotation never deletes an older
+snapshot to make room for a failed new one.
+
 ---
 
 ## Options

@@ -84,6 +84,30 @@ teardown() {
 	assert_output "app-misc/foo bar"
 }
 
+@test "f_to_d: qatom failure leaves the original file intact" {
+	local original=$'app-misc/foo bar\ndev-libs/baz qux'
+	printf '%s\n' "${original}" > "${TEST_PORT_ETC}/package.use"
+	qatom() { return 1; }
+	run f_to_d
+	[ "$status" -ne 0 ]
+	[ -f "${TEST_PORT_ETC}/package.use" ]
+	[[ "$(command cat "${TEST_PORT_ETC}/package.use")" == "${original}" ]]
+}
+
+@test "f_to_d: a later staging failure leaves every package file intact" {
+	printf 'app-misc/foo bar\n' > "${TEST_PORT_ETC}/package.mask"
+	printf 'dev-libs/baz qux\n' > "${TEST_PORT_ETC}/package.use"
+	qatom() {
+		[[ "$1" == 'dev-libs/baz' ]] && return 1
+		printf 'app-misc foo\n'
+	}
+	run f_to_d
+	[ "$status" -ne 0 ]
+	[ -f "${TEST_PORT_ETC}/package.mask" ]
+	[ -f "${TEST_PORT_ETC}/package.use" ]
+	[[ "$(command cat "${TEST_PORT_ETC}/package.mask")" == 'app-misc/foo bar' ]]
+}
+
 # --- d_to_f ---
 
 @test "d_to_f: directory → flat file exists" {
@@ -139,6 +163,36 @@ teardown() {
 	[[ -f "${TEST_PORT_ETC}/package.use" ]]
 	run cat "${TEST_PORT_ETC}/package.use"
 	assert_output "app-misc/foo bar"
+}
+
+@test "d_to_f: sub-file read failure leaves the original directory intact" {
+	mkdir -p "${TEST_PORT_ETC}/package.use"
+	local fragment="${TEST_PORT_ETC}/package.use/app-misc"
+	printf '%s\n' "app-misc/foo bar" > "${fragment}"
+	cat() {
+		[[ "$1" == "${fragment}" ]] && return 1
+		command cat "$@"
+	}
+	run d_to_f
+	[ "$status" -ne 0 ]
+	[ -d "${TEST_PORT_ETC}/package.use" ]
+	[[ "$(command cat "${fragment}")" == 'app-misc/foo bar' ]]
+}
+
+@test "d_to_f: a later staging failure leaves every package directory intact" {
+	mkdir -p "${TEST_PORT_ETC}/package.mask" "${TEST_PORT_ETC}/package.use"
+	printf 'app-misc/foo\n' > "${TEST_PORT_ETC}/package.mask/app-misc"
+	local bad="${TEST_PORT_ETC}/package.use/dev-libs"
+	printf 'dev-libs/baz qux\n' > "${bad}"
+	cat() {
+		[[ "$1" == "${bad}" ]] && return 1
+		command cat "$@"
+	}
+	run d_to_f
+	[ "$status" -ne 0 ]
+	[ -d "${TEST_PORT_ETC}/package.mask" ]
+	[ -d "${TEST_PORT_ETC}/package.use" ]
+	[[ "$(command cat "${TEST_PORT_ETC}/package.mask/app-misc")" == 'app-misc/foo' ]]
 }
 
 # --- roundtrip ---
