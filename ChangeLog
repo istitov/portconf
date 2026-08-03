@@ -23,6 +23,8 @@
 	  hardened across the remaining post-2.0.5 audit findings.
 	* README test inventory now matches all four tiers and is regression-
 	  checked against the test tree.
+	* Unknown options fail with usage status 2 during preflight validation,
+	  before an earlier valid option can perform work.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as

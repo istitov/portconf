@@ -3300,6 +3300,29 @@ _needs_write_lock(){
 	return 1
 }
 
+# Reject an invalid dispatch token before cache bootstrap, locking, or any
+# handler can run.  Discovering a typo inside the dispatch loop is too late:
+# valid options preceding it may already have changed the live configuration.
+_validate_dispatch_opts(){
+	local opt
+	for opt in ${1};do
+		case "${opt}" in
+			--regen-cache|-rc|--backup|-b|--restore|-r|--sort|-s|\
+			--use-sort|-us|--use-invalid|-ui|--use-make|-um|\
+			--stupid-use-profile|-sup|--use-full|-uf|\
+			--keyword-one|-ko|--keyword-uniq|-ku|\
+			--trash|-t|--stupid-mask|-sm|--stupid-unmask|-sum|\
+			--force-trash|-ft|--rm-comments|-c|--rm-all-comments|-ac|\
+			--full|-f|--files-2-dirs|-f2d|--dirs-2-files|-d2f|\
+			--all-profiles-use|-apu|--profiles-use|-pu|\
+			--current-profile-use|-cpu|--world-backup|-wb|\
+			--world-restore|-wr|--world-regen|-wg|--fix-repos|-fr|\
+			--version|-V|--help|-h|-\?|h) ;;
+			*) printf '%b\n' "${red}Unknown option${restore}: ${opt}" >&2; return 2 ;;
+		esac
+	done
+}
+
 # Hold an advisory lock for the lifetime of an applying process.  The lock file
 # is persistent by design: unlinking it on exit would let a third process lock a
 # new inode while a queued process still holds the old one.  BRDIR is already
@@ -3373,6 +3396,12 @@ for _global_opt in ${opts};do
 	esac
 done
 opts="${_dispatch_opts}"
+# Validate the complete request before any option handler can have side
+# effects.  Status 2 follows the existing contradictory-mode usage error.
+if ! _validate_dispatch_opts "${opts}";then
+	help_pc >&2
+	exit 2
+fi
 # Acquire the writer lock before cache bootstrap or any dispatch handler can
 # touch shared state.  Pretend mode remains side-effect-free and lock-free.
 if ! _action_is pretend && _needs_write_lock "${opts}";then
@@ -3509,7 +3538,7 @@ for OPT in ${opts};do
 		overlays;;
 	--version | -V ) echo "portconf ${PACKAGE_VERSION}"; exit 0;;
 	--help | -h | -? | h ) help_pc;;
-	*) printf '%b\n' "${red}Unknown option${restore}: ${OPT}" >&2; help_pc;;
+	*) printf '%b\n' "${red}Unknown option${restore}: ${OPT}" >&2; help_pc >&2; exit 2;;
 	esac
 done
 # Free the -rc temporary eix cache ONCE, after every flag has run -- not per

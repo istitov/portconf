@@ -59,3 +59,22 @@ setup() {
 	if _needs_eix "-rc";            then echo "-rc alone wrongly matched"      >&2; false; fi
 	if _needs_eix "";              then echo "empty wrongly matched"          >&2; false; fi
 }
+
+@test "_validate_dispatch_opts: accepts every dispatch option" {
+	_validate_dispatch_opts "
+		-rc --regen-cache -b --backup -r --restore -s --sort
+		-us --use-sort -ui --use-invalid -um --use-make
+		-sup --stupid-use-profile -uf --use-full -ko --keyword-one
+		-ku --keyword-uniq -t --trash -sm --stupid-mask
+		-sum --stupid-unmask -ft --force-trash -c --rm-comments
+		-ac --rm-all-comments -f --full -f2d --files-2-dirs
+		-d2f --dirs-2-files -apu --all-profiles-use -pu --profiles-use
+		-cpu --current-profile-use -wb --world-backup -wr --world-restore
+		-wg --world-regen -fr --fix-repos -V --version -h --help -? h"
+}
+
+@test "_validate_dispatch_opts: rejects an unknown option with usage status" {
+	run _validate_dispatch_opts "--sort --not-a-portconf-option --backup"
+	[ "${status}" -eq 2 ]
+	[[ "${output}" == *'Unknown option: --not-a-portconf-option'* ]]
+}

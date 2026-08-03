@@ -46,12 +46,11 @@ load test_helper
 	assert_output_contains 'Usage: portconf'
 }
 
-@test "smoke: unknown flag is silently ignored" {
-	# Current behaviour: unknown options fall through the case statement
-	# with no error.  Asserted here so a future "strict flags" change
-	# surfaces in this tier, not as a user-bug report.
+@test "smoke: unknown option exits with usage status" {
 	run "${PORTCONF_BIN}" --this-flag-does-not-exist
-	[ "$status" -eq 0 ]
+	[ "$status" -eq 2 ]
+	assert_output_contains 'Unknown option'
+	assert_output_contains 'Usage: portconf'
 }
 
 @test "smoke: -p alone is a no-op (silently exits 0)" {
@@ -77,9 +76,12 @@ load test_helper
 	[ "$status" -eq 0 ]
 }
 
-@test "smoke: an unknown option errors with usage (not silently ignored)" {
-	# PORTCONF_CONF=/dev/null so a host PORTCONF_DEFAULT_OPTS can't interfere.
-	run env PORTCONF_CONF=/dev/null "${PORTCONF_BIN}" --definitely-not-a-real-flag
+@test "smoke: options are validated before an earlier handler can run" {
+	# --version would exit successfully before a later bad token if validation
+	# happened incrementally inside the dispatch loop.
+	run env PORTCONF_CONF=/dev/null "${PORTCONF_BIN}" --version --definitely-not-a-real-flag
+	[ "$status" -eq 2 ]
 	assert_output_contains 'Unknown option'
 	assert_output_contains 'Usage: portconf'
+	[[ "${output}" != *'portconf 2.'* ]]
 }
