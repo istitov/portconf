@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: gentoo/stage3 — shellcheck + bats + integration
+    name: gentoo/stage3 — shellcheck + all test tiers
     runs-on: ubuntu-latest
     container:
       image: gentoo/stage3:latest

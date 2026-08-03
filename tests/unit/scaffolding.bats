@@ -24,3 +24,16 @@ setup() {
 @test "scaffolding: PACKAGE_VERSION is set (substituted at build time or shows placeholder)" {
 	[[ -n "${PACKAGE_VERSION}" ]]
 }
+
+@test "scaffolding: README test inventory matches the test tree" {
+	local root="${BATS_TEST_DIRNAME}/../.."
+	local unit integration smoke property total
+	unit="$(awk '/^@test / { count++ } END { print count + 0 }' "${root}"/tests/unit/*.bats)"
+	integration="$(awk '/^@test / { count++ } END { print count + 0 }' "${root}"/tests/integration/*.bats)"
+	smoke="$(awk '/^@test / { count++ } END { print count + 0 }' "${root}"/tests/smoke/*.bats)"
+	property="$(awk '/^@test / { count++ } END { print count + 0 }' "${root}"/tests/property/*.bats)"
+	total=$(( unit + integration + smoke + property ))
+	grep -Fq "${total}-test suite across four tiers" "${root}/README.md"
+	grep -Fq "${unit} unit / ${integration}" "${root}/README.md"
+	grep -Fq "integration / ${smoke} smoke / ${property} property" "${root}/README.md"
+}
