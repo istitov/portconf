@@ -49,11 +49,12 @@ handling, and rewrite invariants substantially harder to violate.
   all received additional correctness hardening.
 - Restore inventories cannot mix etc, world, or foreign archives; conversion
   fragments with missing final newlines cannot concatenate adjacent atoms; and
-  `env.d` is processed independently from `env`.
+  `env.d` is processed independently from `env`. Restore inventory discovery
+  no longer leaks shell glob options into later actions.
 
 ### Verification
 
-The release passes 489 automated tests: 293 unit, 119 integration, 54 smoke,
+The release passes 490 automated tests: 293 unit, 120 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.

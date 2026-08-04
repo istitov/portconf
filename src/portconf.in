@@ -865,19 +865,20 @@ _validate_restore_archive() {
 
 # restore: select, validate, stage, and atomically replace a saved target.
 restore(){
-	local -
 	local src answer target="$4" kind="$5" stage desired archive
 	local -a archives=() labels=()
 	# Keep etc and world inventories strictly separate.  Listing every *.bz2 in
 	# the directory let an unrelated archive become the force-mode "newest"
 	# choice, after which restore constructed a nonexistent prefixed path.
-	shopt -s nullglob
-	archives=( "${1}/${2}_"*.tar.bz2 )
+	# Build the inventory explicitly instead of enabling nullglob, which leaked
+	# through every early return and changed later dispatch handlers' glob tests.
+	mapfile -t archives < <(
+		find "${1}" -maxdepth 1 -type f -name "${2}_*.tar.bz2" -print 2>/dev/null | sort
+	)
 	if (( ${#archives[@]} == 0 ));then
 		printf '%b\n' "${red}No backups${restore} found in ${contrast}${1}${restore}"
 		return 0
 	fi
-	mapfile -t archives < <(printf '%s\n' "${archives[@]}" | sort)
 	for archive in "${archives[@]}";do
 		answer="${archive#"${1}"/"${2}"_}"
 		labels+=("${answer%.tar.bz2}")

@@ -53,6 +53,8 @@
 	* Redundant keyword pruning removes exact literal tokens, so `amd64` cannot
 	  erase `~amd64` and option- or wildcard-shaped keywords remain data rather
 	  than grep options, regular expressions, or shell globs.
+	* Restore builds its archive inventory without changing the caller's shell
+	  glob options, so early returns cannot alter later dispatch behavior.
 	* env.d is checked even when env is absent, each subtree has an independent
 	  removal list, and dotfile-only directories are no longer pruned as empty.
 	* Directory-to-file conversion inserts a missing newline only between
@@ -73,7 +75,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 489 automated tests pass: 293 unit, 119 integration, 54 smoke, and 23
+	* 490 automated tests pass: 293 unit, 120 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the

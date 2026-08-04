@@ -217,6 +217,22 @@ load 'test_helper'
 	rm -rf "${TEST_ROOT}"
 }
 
+@test "etc_restore: empty inventory does not leak nullglob" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}"
+	shopt -u nullglob
+
+	etc_restore </dev/null >/dev/null
+
+	run shopt -p nullglob
+	assert_output 'shopt -u nullglob'
+	rm -rf "${TEST_ROOT}"
+}
+
 @test "etc_restore: sibling-prefix member is rejected without an out-of-root write" {
 	load_portconf
 	make_test_portage
