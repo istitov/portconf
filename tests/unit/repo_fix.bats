@@ -118,6 +118,19 @@ teardown() {
 	rm -f "${captured}"
 }
 
+@test "repo_fix: pretend preserves a dangling overlay profile symlink" {
+	mkdir -p "${TEST_OVERLAY}/my-overlay" "${TEST_OVERLAY}/profiles"
+	ln -s '../missing-dir/profile' "${TEST_OVERLAY}/profiles/parent"
+	PORTDIR_OVERLAY="${TEST_OVERLAY}"
+	_set_action_mode pretend
+
+	repo_fix
+
+	[[ -L "${PORTDIR_OVERLAY}/profiles/parent" ]]
+	[[ "$(readlink "${PORTDIR_OVERLAY}/profiles/parent")" == "$(readlink -m "${TEST_OVERLAY}")/profiles/parent" ]]
+	rm_repo_fix
+}
+
 # --- rm_repo_fix ---
 
 @test "rm_repo_fix: removes files registered in tmp_categories" {

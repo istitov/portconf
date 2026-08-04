@@ -62,7 +62,7 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 502 automated tests: 303 unit, 122 integration, 54 smoke,
+The release passes 503 automated tests: 304 unit, 122 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.

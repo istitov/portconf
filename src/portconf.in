@@ -701,6 +701,9 @@ repo_fix(){
 	local entry child base
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
+			# Scratch links must use absolute source names, but resolving each
+			# entry with readlink -f would reject a valid dangling profile link.
+			path="$(readlink -m -- "${path}")" || return 1
 			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u || true)"
 			portage_categoties="$(cat "${PORTDIR}/profiles/categories" 2>/dev/null || true)"
 			if [[ -n "$(grep -vxF -f <(printf '%s\n' "${portage_categoties}") <<< "${local_categories}" || true)" ]];then
@@ -716,10 +719,10 @@ repo_fix(){
 							if [[ "${base}" == "profiles" ]];then
 								while IFS= read -r -d '' child;do
 									[[ "${child##*/}" == "categories" ]] && continue
-									ln -s -- "$(readlink -f -- "${child}")" "${shadow}/profiles/${child##*/}" || return 1
+									ln -s -- "${child}" "${shadow}/profiles/${child##*/}" || return 1
 								done < <(find -H "${entry}" -mindepth 1 -maxdepth 1 -print0)
 							else
-								ln -s -- "$(readlink -f -- "${entry}")" "${shadow}/${base}" || return 1
+								ln -s -- "${entry}" "${shadow}/${base}" || return 1
 							fi
 						done < <(find "${path}" -mindepth 1 -maxdepth 1 -print0)
 						printf '%s\n' "${local_categories}" > "${shadow}/profiles/categories" || return 1

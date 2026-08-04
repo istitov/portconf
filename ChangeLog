@@ -87,7 +87,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 502 automated tests pass: 303 unit, 122 integration, 54 smoke, and 23
+	* 503 automated tests pass: 304 unit, 122 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the
