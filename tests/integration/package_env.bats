@@ -138,3 +138,15 @@ teardown() {
 	[[ -f "${PORT_ETC}/env/shared.conf" ]]
 	[[ -f "${PORT_ETC}/env/other.conf" ]]
 }
+
+@test "package_env: lines without config tokens pass through verbatim" {
+	printf '%s\n' \
+		'cat-test/bare' \
+		'cat-test/annotated  # keep me' \
+		> "${PORT_ETC}/package.env"
+
+	package_env
+
+	run cat "${PORT_ETC}/package.env"
+	assert_output "$(printf 'cat-test/bare\ncat-test/annotated  # keep me')"
+}

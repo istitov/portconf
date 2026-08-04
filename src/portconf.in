@@ -1852,7 +1852,11 @@ package_env(){
 				missing=1
 			done
 
-			if [[ -z "${missing}" && -n "${all_confs}" ]];then
+			if [[ -z "${all_confs}" ]];then
+				# No environment-file token was parsed.  This is not evidence that
+				# the atom or its annotation is stale; preserve unknown input exactly.
+				printf '%s\n' "${line}" >> "${tmp_file}"
+			elif [[ -z "${missing}" ]];then
 				# Preserve byte-for-byte lines whose references are all valid.
 				printf '%s\n' "${line}" >> "${tmp_file}"
 			elif (( ${#kept_confs[@]} > 0 ));then

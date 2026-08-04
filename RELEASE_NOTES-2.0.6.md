@@ -41,7 +41,8 @@ handling, and rewrite invariants substantially harder to violate.
   annotations, and removes newly empty directories deepest-first.
 - Referenced environment configs are never mistaken for implicit package
   bashrc files, and references are resolved globally across directory
-  fragments before an unused config can be removed.
+  fragments before an unused config can be removed. Unrecognized package.env
+  lines pass through verbatim instead of losing their atom or annotation.
 - Redundant keyword removal is literal and token-exact; substring-sharing,
   option-leading, and wildcard-shaped sibling keywords are preserved.
 - Temp cleanup, backup rotation, eix-cache lifetime, qatom parsing, environment
@@ -54,7 +55,7 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 490 automated tests: 293 unit, 120 integration, 54 smoke,
+The release passes 491 automated tests: 293 unit, 121 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.
