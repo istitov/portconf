@@ -66,7 +66,8 @@ EXTRA_DIST = \
 	tests/property/comments.bats \
 	tests/property/status_line.bats \
 	tests/property/make_conf_use.bats \
-	tests/property/invalid_uses.bats
+	tests/property/invalid_uses.bats \
+	tests/property/removal_restore_safety.bats
 
 # Override BATS to point at a non-system bats binary if needed.
 BATS = bats

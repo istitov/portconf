@@ -36,6 +36,9 @@
 	* Sorting preserves flagless package.use atoms and concatenates the comment
 	  blocks attached to every duplicate atom occurrence instead of silently
 	  discarding all but the first block.
+	* Dedicated property tests now exercise exact-removal sibling preservation
+	  across literal/metacharacter/slot/version families and prove that several
+	  rejected restore-archive shapes leave a live-tree fingerprint unchanged.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as
