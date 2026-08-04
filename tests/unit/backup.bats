@@ -47,6 +47,16 @@ _fake_backup() {
 	assert_success
 }
 
+@test "backup: archive stamp uses the calendar year" {
+	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
+	date() {
+		[[ "$1" == '+%y.%m.%d-%H:%M:%S' ]] || return 1
+		printf '27.01.01-00:00:00\n'
+	}
+	backup
+	[[ -f "${TEST_BRDIR}/portage_27.01.01-00:00:00.tar.bz2" ]]
+}
+
 @test "backup: BRDIR newer than PORT_ETC — no tarball created" {
 	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
 	touch -d '2020-01-01' "${TEST_PORT_ETC}/package.use"

@@ -62,6 +62,15 @@ teardown() {
 	[[ "${output}" =~ ^world_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+:[0-9]+:[0-9]+\.tar\.bz2$ ]]
 }
 
+@test "world_backup: archive stamp uses the calendar year" {
+	date() {
+		[[ "$1" == '+%y.%m.%d-%H:%M:%S' ]] || return 1
+		printf '27.01.01-00:00:00\n'
+	}
+	world_backup
+	[[ -f "${BRDIR}/world/world_27.01.01-00:00:00.tar.bz2" ]]
+}
+
 @test "world_backup: tarball contains the world file" {
 	world_backup
 	local tarball

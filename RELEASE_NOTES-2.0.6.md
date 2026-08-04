@@ -51,11 +51,12 @@ handling, and rewrite invariants substantially harder to violate.
 - Restore inventories cannot mix etc, world, or foreign archives; conversion
   fragments with missing final newlines cannot concatenate adjacent atoms; and
   `env.d` is processed independently from `env`. Restore inventory discovery
-  no longer leaks shell glob options into later actions.
+  no longer leaks shell glob options into later actions. Backup labels use the
+  calendar year so lexical newest/oldest ordering remains correct in January.
 
 ### Verification
 
-The release passes 491 automated tests: 293 unit, 121 integration, 54 smoke,
+The release passes 493 automated tests: 295 unit, 121 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.

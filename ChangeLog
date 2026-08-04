@@ -57,6 +57,9 @@
 	  than grep options, regular expressions, or shell globs.
 	* Restore builds its archive inventory without changing the caller's shell
 	  glob options, so early returns cannot alter later dispatch behavior.
+	* Backup names use the calendar year rather than the ISO week-year, keeping
+	  force-mode newest selection and retention rotation chronological across
+	  the first days of January while retaining the established name format.
 	* env.d is checked even when env is absent, each subtree has an independent
 	  removal list, and dotfile-only directories are no longer pruned as empty.
 	* Directory-to-file conversion inserts a missing newline only between
@@ -77,7 +80,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 491 automated tests pass: 293 unit, 121 integration, 54 smoke, and 23
+	* 493 automated tests pass: 295 unit, 121 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the

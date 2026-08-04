@@ -757,7 +757,7 @@ backup(){
 	portconf_update="${portconf_update:-0}"
 	if (( "${etc_update}" > "${portconf_update}" ));then
 		printf '%b\n' "${PORT_ETC} backup: ${green}creating${restore}..."
-		name="${BRDIR}/portage_$(date +%g.%m.%d-%H:%M:%S).tar.bz2"
+		name="${BRDIR}/portage_$(date +%y.%m.%d-%H:%M:%S).tar.bz2"
 		draft="$(_mktemp_near "${name}")"
 		if [[ -n "${legacy_makeconf}" ]];then
 			tar -jcf "${draft}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}" || {
@@ -800,7 +800,7 @@ world_backup(){
 	portconf_update="${portconf_update:-0}"
 	if (( "${world_update}" > "${portconf_update}" ));then
 		printf '%b\n' "world backup: ${green}creating${restore}..."
-		name="${world_dir}/world_$(date +%g.%m.%d-%H:%M:%S).tar.bz2"
+		name="${world_dir}/world_$(date +%y.%m.%d-%H:%M:%S).tar.bz2"
 		draft="$(_mktemp_near "${name}")"
 		tar -jcf "${draft}" -C "${WORLD%/*}" "${WORLD##*/}" || {
 			rm -f -- "${draft}"
