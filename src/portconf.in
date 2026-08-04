@@ -1754,31 +1754,59 @@ force_not_installed(){
 # === $PORT_ETC/package.env entries and the env/ subdir files they reference.
 # ============================================================================
 
+# Print environment-file paths referenced by package.env, relative to env/.
+# Portage uses env/ for two distinct features: package.env may name arbitrary
+# configuration files there, while env/<category>/<package> is an implicit
+# package-specific bashrc namespace.  A referenced path belongs to the former
+# even when it happens to be two levels deep and looks atom-like.
+_package_env_references(){
+	local root="${PORT_ETC}/package.env" source line conf
+	local -a fields=()
+	[[ -e "${root}" ]] || return 0
+	while IFS= read -r -d '' source;do
+		while IFS= read -r line || [[ -n "${line}" ]];do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			line="${line%%#*}"
+			fields=()
+			read -r -a fields <<< "${line}" || true
+			(( ${#fields[@]} > 1 )) || continue
+			for conf in "${fields[@]:1}";do
+				# Portage normally resolves names below env/.  Normalize the
+				# harmless explicit forms so they protect the same on-disk path.
+				while [[ "${conf}" == ./* ]];do conf="${conf#./}";done
+				if [[ "${conf}" == "${PORT_ETC}/env/"* ]];then
+					conf="${conf#"${PORT_ETC}/env/"}"
+				elif [[ "${conf}" == /* ]];then
+					continue
+				fi
+				[[ -n "${conf}" ]] && printf '%s\n' "${conf}"
+			done
+		done < "${source}"
+	done < <(find -H "${root}" -type f \! -name '*~' \! -name '*.bak' -print0 2>/dev/null)
+}
+
 # package_env_conf: remove env/ conf files no longer referenced by any package.env entry.
 package_env_conf(){
-	# `find` exits 1 if ${PORT_ETC}/env doesn't exist (common: most users
-	# never use per-package env), and command substitution propagates that
-	# failure to the assignment under set -e — script exits 1 mid-dispatch.
-	# Silence and force success; empty output means "no env confs".
-	all_confs="$(find "${PORT_ETC}/env/" -maxdepth 1 -type f 2>/dev/null || true)"
-	all_confs="${all_confs//${PORT_ETC////\/}\/env\//}"
+	local conf target _env_checked=""
+	local -A referenced_env=()
+	while IFS= read -r conf;do
+		[[ -n "${conf}" ]] && referenced_env["${conf}"]=1
+	done < <(_package_env_references)
 	check_env_conf(){
-		USED_ENV=""
-		atoms="$(sed 's/^[ \t]*//;s/[ \t]*$//;/^#/d;/^$/d;' < "${file}" | awk '{print $1}')"
-		while IFS= read -r line;do
-			line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
-			for atom in ${atoms};do
-				USED_ENV+=" ${line#${atom} }"
-			done
-		done < "${file}"
-		USED_ENV="$(tr ' ' $'\n' <<< "${USED_ENV}")"
-		for conf in ${all_confs};do
-			if ! grep -qxF "${conf}" <<< "${USED_ENV}";then
+		# file_or_dir invokes this callback once per non-empty fragment.  Build
+		# ownership from the complete package.env tree, then perform the global
+		# sweep only once; a later fragment cannot invalidate an earlier one's
+		# references.
+		[[ -z "${_env_checked}" ]] || return 0
+		_env_checked=1
+		while IFS= read -r -d '' target;do
+			conf="${target#"${PORT_ETC}/env/"}"
+			if [[ -z "${referenced_env["${conf}"]:-}" ]];then
 				printf '%b\n' "Unused conf: ${red}${conf}${restore}"
-				remove_ask "${PORT_ETC}/env/${conf}"
+				remove_ask "${target}"
 				eend $? 2>/dev/null
 			fi
-		done
+		done < <(find "${PORT_ETC}/env/" -maxdepth 1 -type f -print0 2>/dev/null)
 	}
 	file_or_dir "package.env" "Checking unused configs in" "check_env_conf" || true
 }
@@ -1836,8 +1864,12 @@ package_env(){
 # env_not_installed: remove env/<cat>/<pn> files whose target package is not installed.
 env_not_installed(){
 	local x files dirs file category pn pv pr slot full_ver slot_found
-	local _sf _s target
+	local _sf _s target conf
 	local -a remove_targets=()
+	local -A referenced_env=()
+	while IFS= read -r conf;do
+		[[ -n "${conf}" ]] && referenced_env["${conf}"]=1
+	done < <(_package_env_references)
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
 	for x in "env" "env.d";do
 		remove_targets=()
@@ -1857,6 +1889,12 @@ env_not_installed(){
 
 		while read -r file;do
 			[[ -z "${file}" ]] && continue
+			# package.env references take precedence over the implicit bashrc
+			# filename convention.  In particular, cat/pkg.conf is a common
+			# referenced config path, not evidence for a package named pkg.conf.
+			if [[ "${x}" == "env" && -n "${referenced_env["${file}"]:-}" ]];then
+				continue
+			fi
 			# Reparse the file name with qatom -F (pipe-separated, non-whitespace
 			# IFS) -- the same idiom as package_envs.  The default whitespace qatom
 			# output collapses the empty PR column, so a `<cat>/<pn>:slot` name's

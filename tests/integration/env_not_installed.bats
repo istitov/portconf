@@ -58,6 +58,18 @@ _install() {
 	[[ -e "${PORT_ETC}/env/cat-test/bar" ]]
 }
 
+@test "env_not_installed: keeps nested package.env configs for installed packages" {
+	: > "${PORT_ETC}/env/cat-test/mypkg"
+	: > "${PORT_ETC}/env/cat-test/mypkg.conf"
+	printf 'cat-test/mypkg cat-test/mypkg.conf\n' > "${PORT_ETC}/package.env"
+	_install "cat-test/mypkg-1.0"
+
+	env_not_installed
+
+	[[ -e "${PORT_ETC}/env/cat-test/mypkg" ]]
+	[[ -e "${PORT_ETC}/env/cat-test/mypkg.conf" ]]
+}
+
 # --- slot-qualified <cat>/<pn>:slot (the branch the old parse never reached) ---
 
 @test "env_not_installed: slot file kept when the EXACT slot is installed" {

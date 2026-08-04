@@ -59,18 +59,31 @@ teardown() {
 	done
 }
 
-@test "property: trash resolves stale package.env references in one pass" {
+@test "property: trash removes an unreferenced bashrc for an uninstalled package" {
 	mkdir -p "${PROP_PORT_ETC}/env/cat-test"
-	printf 'synthetic env\n' > "${PROP_PORT_ETC}/env/cat-test/gone.conf"
-	printf 'sys-apps/grep cat-test/gone.conf\n' > "${PROP_PORT_ETC}/package.env"
+	printf 'synthetic bashrc\n' > "${PROP_PORT_ETC}/env/cat-test/gone"
 
 	prop_apply -t
 	[ "${status}" -eq 0 ]
-	[ ! -e "${PROP_PORT_ETC}/env/cat-test/gone.conf" ]
-	if [[ -e "${PROP_PORT_ETC}/package.env" ]];then
-		run grep -F 'cat-test/gone.conf' "${PROP_PORT_ETC}/package.env"
-		assert_failure
-	fi
+	[ ! -e "${PROP_PORT_ETC}/env/cat-test/gone" ]
+	assert_idempotent -t
+}
+
+@test "property: trash preserves referenced env inventory for installed packages" {
+	local before after
+	mkdir -p "${PROP_PORT_ETC}/env/sys-apps" "${PROP_PKGDB}/sys-apps/grep-1.0"
+	printf 'synthetic env\n' > "${PROP_PORT_ETC}/env/sys-apps/grep.conf"
+	printf 'shared env\n' > "${PROP_PORT_ETC}/env/shared.conf"
+	mkdir -p "${PROP_PORT_ETC}/package.env"
+	printf 'sys-apps/grep sys-apps/grep.conf shared.conf\n' \
+		> "${PROP_PORT_ETC}/package.env/main"
+	printf 'sys-apps/grep sys-apps/grep.conf\n' > "${PROP_PORT_ETC}/package.env/other"
+	before="$(_tree_fingerprint "${PROP_PORT_ETC}")"
+
+	prop_apply -t
+	[ "${status}" -eq 0 ]
+	after="$(_tree_fingerprint "${PROP_PORT_ETC}")"
+	assert_equal "${after}" "${before}"
 	assert_idempotent -t
 }
 

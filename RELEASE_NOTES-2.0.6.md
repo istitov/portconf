@@ -39,6 +39,9 @@ handling, and rewrite invariants substantially harder to violate.
 - Trash/full cleanup removes stale nested env targets before pruning their
   `package.env` references, completes the rewrite in one pass, preserves useful
   annotations, and removes newly empty directories deepest-first.
+- Referenced environment configs are never mistaken for implicit package
+  bashrc files, and references are resolved globally across directory
+  fragments before an unused config can be removed.
 - Temp cleanup, backup rotation, eix-cache lifetime, qatom parsing, environment
   cleanup, mask/keyword decisions, overlay cleanup, and status accounting have
   all received additional correctness hardening.
@@ -48,10 +51,10 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 484 automated tests: 291 unit, 117 integration, 54 smoke,
-and 22 property tests. The property tier now directly checks that exact
-removal never changes a sibling and that rejected restore archives leave the
-live tree unchanged.
+The release passes 487 automated tests: 291 unit, 119 integration, 54 smoke,
+and 23 property tests. The property tier now directly checks that exact
+removal never changes a sibling, referenced environment inventories survive
+trash cleanup, and rejected restore archives leave the live tree unchanged.
 
 Ten representative mutating modes (`-us`, `-s`, `-ku`, `-ko`, `-c`, `-ac`,
 `-ui`, `-uf`, `-t`, and `-f`) were also applied twice to isolated copies of a

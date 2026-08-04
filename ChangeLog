@@ -47,6 +47,9 @@
 	* Trash/full cleanup removes stale nested env targets before pruning their
 	  package.env references, and prunes every missing reference in one rewrite;
 	  the result is complete in one pass and idempotent on a real config copy.
+	* Environment cleanup distinguishes package.env configuration references
+	  from implicit package bashrc paths, and evaluates ownership across the
+	  complete package.env tree so one fragment cannot delete another's config.
 	* env.d is checked even when env is absent, each subtree has an independent
 	  removal list, and dotfile-only directories are no longer pruned as empty.
 	* Directory-to-file conversion inserts a missing newline only between
@@ -67,7 +70,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 484 automated tests pass: 291 unit, 117 integration, 54 smoke, and 22
+	* 487 automated tests pass: 291 unit, 119 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the

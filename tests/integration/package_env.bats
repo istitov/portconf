@@ -124,3 +124,17 @@ teardown() {
 	run grep -F 'nonexistent.conf' "${PORT_ETC}/package.env"
 	assert_failure
 }
+
+@test "package_env_conf: references are global across directory fragments" {
+	rm -f "${PORT_ETC}/package.env"
+	mkdir -p "${PORT_ETC}/package.env"
+	printf 'cat-test/a shared.conf\n' > "${PORT_ETC}/package.env/first"
+	printf 'cat-test/b other.conf\n' > "${PORT_ETC}/package.env/second"
+	printf 'shared\n' > "${PORT_ETC}/env/shared.conf"
+	printf 'other\n' > "${PORT_ETC}/env/other.conf"
+
+	package_env_conf
+
+	[[ -f "${PORT_ETC}/env/shared.conf" ]]
+	[[ -f "${PORT_ETC}/env/other.conf" ]]
+}
