@@ -128,3 +128,32 @@ _install() {
 	[[ ! -e "${PORT_ETC}/env/cat-test/gone_one" ]]
 	[[ ! -e "${PORT_ETC}/env/cat-test/gone_two" ]]
 }
+
+@test "env_not_installed: checks env.d even when env is absent" {
+	rm -rf "${PORT_ETC}/env"
+	mkdir -p "${PORT_ETC}/env.d/cat-test"
+	: > "${PORT_ETC}/env.d/cat-test/gone"
+	env_not_installed
+	[[ ! -e "${PORT_ETC}/env.d/cat-test/gone" ]]
+}
+
+@test "env_not_installed: does not replay env removals while processing env.d" {
+	mkdir -p "${PORT_ETC}/env.d/cat-test"
+	: > "${PORT_ETC}/env/cat-test/env_gone"
+	: > "${PORT_ETC}/env.d/cat-test/envd_gone"
+	local calls="${BATS_TEST_TMPDIR}/removed"
+	remove_ask() {
+		printf '%s\n' "$1" >> "${calls}"
+		rm -rf -- "$1"
+	}
+	env_not_installed
+	[[ "$(grep -Fxc "${PORT_ETC}/env/cat-test/env_gone" "${calls}")" -eq 1 ]]
+	[[ "$(grep -Fxc "${PORT_ETC}/env.d/cat-test/envd_gone" "${calls}")" -eq 1 ]]
+}
+
+@test "env_not_installed: retains a directory containing only hidden files" {
+	mkdir -p "${PORT_ETC}/env.d"
+	: > "${PORT_ETC}/env.d/.keep"
+	env_not_installed
+	[[ -f "${PORT_ETC}/env.d/.keep" ]]
+}

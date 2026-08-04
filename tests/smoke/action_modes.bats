@@ -200,3 +200,15 @@ _run_mode() {
 	[ -f "${SMOKE_PORT_ETC}/repos.conf/unused.conf" ]
 	assert_output_contains 'Unused repos (would remove)'
 }
+
+@test "action mode: --ask overlay cleanup aborts safely on EOF" {
+	local repo="${SMOKE_PORT_ETC}/unused-repo-eof"
+	mkdir -p "${repo}" "${SMOKE_PORT_ETC}/repos.conf"
+	printf '[unused-eof]\nlocation = %s\n' "${repo}" \
+		> "${SMOKE_PORT_ETC}/repos.conf/unused-eof.conf"
+	_run_mode --ask -fr </dev/null
+	[ "$status" -ne 0 ]
+	[ -d "${repo}" ]
+	[ -f "${SMOKE_PORT_ETC}/repos.conf/unused-eof.conf" ]
+	assert_output_contains 'repository cleanup aborted'
+}

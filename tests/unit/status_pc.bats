@@ -89,6 +89,27 @@ teardown() {
 	[ -e "${_f1}" ]
 }
 
+@test "wiring: remove_ask ask-mode propagates an rm failure" {
+	_set_action_mode ask
+	rm() {
+		[[ "$1" == "-rf" && "$3" == "${_f1}" ]] && return 1
+		command rm "$@"
+	}
+	run remove_ask "${_f1}" <<< "yes"
+	unset -f rm
+	[ "${status}" -ne 0 ]
+	[ -e "${_f1}" ]
+	[ "${_changes_applied}" -eq 0 ]
+}
+
+@test "wiring: remove_ask ask-mode EOF aborts explicitly" {
+	_set_action_mode ask
+	run remove_ask "${_f1}" </dev/null
+	[ "${status}" -ne 0 ]
+	[ -e "${_f1}" ]
+	[[ "${output}" == *"No answer read"* ]]
+}
+
 # --- _status_pc message branches --------------------------------------------
 
 @test "_status_pc: silent when no mutating op ran (_changes_seen empty)" {

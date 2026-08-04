@@ -54,7 +54,7 @@ requirements:
    make distcheck
    ```
 
-   CI runs all three test tiers, `shellcheck --severity=error
+   CI runs all four test tiers, `shellcheck --severity=error
    src/portconf`, completion-file syntax checks (`bash -n` /
    `zsh -n`), and `make distcheck` on `gentoo/stage3:latest`.  Any
    new code path needs at least one test.

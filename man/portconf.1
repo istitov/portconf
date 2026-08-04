@@ -1,4 +1,4 @@
-.TH PORTCONF 1 "2026-08-03" "portconf 2\.0\.6" "Gentoo Utilities"
+.TH PORTCONF 1 "2026-08-04" "portconf 2\.0\.6" "Gentoo Utilities"
 .SH NAME
 portconf \- /etc/portage configuration cleaner and manager
 .SH SYNOPSIS
@@ -8,11 +8,13 @@ portconf \- /etc/portage configuration cleaner and manager
 .B portconf
 automatically detects and cleans up configuration issues in
 .IR /etc/portage .
-It handles USE flags, keywords, package atoms, backups, overlays, and the world file.
+It handles USE flags, keywords, package atoms, backups, overlays, and the
+world file.
 .PP
-Operations that modify
-.I /etc/portage
-automatically create a timestamped backup beforehand when apply mode is enabled.
+Package-configuration rewrites and layout conversions automatically create a
+timestamped backup beforehand when apply mode is enabled.  World regeneration
+uses its separate world backup.  Repository cleanup is protected by its undo
+journal but does not publish a persistent tarball.
 Up to
 .B COUNT
 (default 10) backups are retained.
@@ -28,17 +30,21 @@ Destructive multi-step operations use same-filesystem staging and an undo
 journal.  Ordinary failures roll back world regeneration, layout conversions,
 restores, and repository cleanup before the command returns.  Backup archives
 are verified before publication and rotation.  Restore archives are rejected
-unless all members remain inside the expected target root and use supported
-file types.
+unless every member path remains inside the expected target root and uses a
+supported file type.  Symlink nodes, including external make.profile targets,
+are retained only after the complete archive extracts successfully in staging;
+an attempted write through one aborts before the live target is replaced.
 .PP
 Applying runs hold an exclusive advisory lock at
 .IR /var/lib/portconf/.portconf.lock .
 If another applying process owns the lock, portconf exits without changing
 state.  Dry-runs and read-only queries do not acquire it.
 .PP
-Rewritten files preserve their existing access metadata.  File/directory
-layout conversions map permissions and ownership onto the new representation
-instead of resetting every generated file to mode 0644.
+Rewritten files preserve mode, ownership, ACL-compatible mode metadata, and
+supported extended attributes.  File/directory layout conversions map POSIX
+permissions and ownership onto the new representation instead of resetting
+every generated file to mode 0644; they do not synthesize cross-type ACLs or
+extended attributes for the container itself.
 .SH OPTIONS
 .SS Common
 .TP
@@ -112,7 +118,8 @@ Keep only the latest defined keyword per atom.
 .SS Trash
 .TP
 .BR \-t ", " \-\-trash
-Remove not-found/not-installed atoms, empty files, backup files, and unused configs.
+Remove not-found/not-installed atoms, empty files, backup files, and unused
+configs.
 .TP
 .BR \-ft ", " \-\-force\-trash
 Remove all not-installed atoms (excludes
@@ -205,6 +212,7 @@ requires
 .BR bash (1),
 .BR flock (1),
 .BR eix (1),
+.BR gawk (1),
 .BR qlist (1),
 .BR qatom (1),
 .BR versionsort (1),
@@ -222,6 +230,12 @@ are all part of
 .BR flock (1)
 is provided by
 .BR sys-apps/util-linux .
+.BR gawk (1)
+is provided by
+.BR dev-lang/gawk ;
+portconf requires its
+.BR asorti ()
+extension at startup.
 .BR agrep (1)
 is provided by
 .B dev-libs/tre

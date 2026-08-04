@@ -17,16 +17,13 @@ else
 	source /usr/lib*/portage/bin/isolated-functions.sh
 fi
 set -euo pipefail
-# sort_uniq_files / sort_uses use gawk's asorti() to keep each atom's
-# header block attached to it across the alphabetical sort.  Probe
-# early — a busybox / mawk / POSIX-only awk would otherwise error
-# mid-mutation with no actionable diagnostic.  /usr/bin/awk is gawk
-# by default on Gentoo; `eselect awk set …` can override.
-if ! awk 'BEGIN { asorti(a, b) }' </dev/null >/dev/null 2>&1; then
+# The comment-preserving sort rewrites use gawk's asorti().  Invoke gawk
+# directly rather than requiring users to change their system-wide eselect awk
+# provider; probe early so a missing runtime dependency cannot fail mid-write.
+if ! command -v gawk >/dev/null 2>&1; then
 	printf '%s\n' \
 		"error: portconf requires gawk (sort_uniq_files / sort_uses use asorti)" \
-		"       /usr/bin/awk on this host doesn't support it" \
-		"       fix: emerge dev-lang/gawk && eselect awk set gawk" >&2
+		"       fix: emerge dev-lang/gawk" >&2
 	exit 1
 fi
 # functions.sh references EINFO_QUIET without a default; initialize it so
@@ -335,14 +332,30 @@ _sed_escape_rep() {
 # String equality can never collateral-match.
 _drop_line() {
 	local f="$1" v="$2" mode="${3:-line}" tmp
-	tmp="$(_mktemp)"
 	if [[ "${mode}" == "field1" ]]; then
+		if ! awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
+			$1 == v { found=1 } END { exit(found ? 0 : 1) }' "${f}";then
+			return 0
+		fi
+		tmp="$(_mktemp)"
 		awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
 			$1 == v { next } { print }' "${f}" > "${tmp}"
 	else
+		if ! awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
+			{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t); if (t == v) found=1 }
+			END { exit(found ? 0 : 1) }' "${f}";then
+			return 0
+		fi
+		tmp="$(_mktemp)"
 		awk -v v="${v}" 'BEGIN { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v) }
 			{ t = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t) }
 			t == v { next } { print }' "${f}" > "${tmp}"
+	fi
+	# An exact non-match is a true no-op: retain the existing inode, timestamps,
+	# hard-link relationships, and any metadata cp cannot reproduce.
+	if cmp -s -- "${f}" "${tmp}";then
+		rm -f -- "${tmp}"
+		return 0
 	fi
 	_install_rewrite "${f}" "${tmp}"
 }
@@ -472,7 +485,7 @@ _confirm_action() {
 		esac
 	done
 	printf '%b\n' "\n${red}No answer read${restore}; nothing applied"
-	return 1
+	return 2
 }
 # ============================================================================
 # === PROFILE RESOLUTION
@@ -852,20 +865,26 @@ _validate_restore_archive() {
 
 # restore: select, validate, stage, and atomically replace a saved target.
 restore(){
-	local tarballs src answer target="$4" kind="$5" stage desired
-	# Guard the listing: a glob with no match makes `ls` exit non-zero, which
-	# would abort the whole run under set -e instead of saying "no backups".
-	tarballs="$(ls -1 --color=never "${1}"/*.bz2 2>/dev/null || true)"
-	if [[ -z "${tarballs}" ]];then
+	local -
+	local src answer target="$4" kind="$5" stage desired archive
+	local -a archives=() labels=()
+	# Keep etc and world inventories strictly separate.  Listing every *.bz2 in
+	# the directory let an unrelated archive become the force-mode "newest"
+	# choice, after which restore constructed a nonexistent prefixed path.
+	shopt -s nullglob
+	archives=( "${1}/${2}_"*.tar.bz2 )
+	if (( ${#archives[@]} == 0 ));then
 		printf '%b\n' "${red}No backups${restore} found in ${contrast}${1}${restore}"
 		return 0
 	fi
-	tarballs="${tarballs//${1}\/}"
-	tarballs="${tarballs//.tar.bz2/}"
-	tarballs="${tarballs//${2}_/}"
+	mapfile -t archives < <(printf '%s\n' "${archives[@]}" | sort)
+	for archive in "${archives[@]}";do
+		answer="${archive#"${1}"/"${2}"_}"
+		labels+=("${answer%.tar.bz2}")
+	done
 	if _action_is pretend;then
 		printf '%b\n' "${contrast}Available backups${restore}:"
-		printf '%s\n' ${tarballs}
+		printf '%s\n' "${labels[@]}"
 		printf '%b\n' "${contrast}portconf:${restore} dry-run, no restore performed"
 		return 0
 	fi
@@ -873,11 +892,11 @@ restore(){
 	if [[ "${ACTION_MODE:-}" == "force" ]];then
 		# Backup names contain sortable timestamps; force restores the newest
 		# snapshot so the mode remains genuinely non-interactive.
-		answer="$(tail -n1 <<< "${tarballs}")"
+		answer="${labels[${#labels[@]}-1]}"
 		printf '%b\n' "Selecting newest backup: ${green}${answer}${restore}"
 	else
 		PS3="$(printf '%b\n' "${contrast}Choose number:${restore} ")"
-		select answer in ${tarballs};do
+		select answer in "${labels[@]}";do
 			# An out-of-range / non-numeric choice leaves ${answer} empty; re-prompt
 			# instead of falling through and wiping the target with nothing to put
 			# back.
@@ -1035,6 +1054,7 @@ diff_ask(){
 }
 # remove_ask: prompt for confirmation before removing entries from package.* files.
 remove_ask(){
+	local _ans_fd=9 x
 	# Feed the status line like diff_ask: a removal candidate is a change found,
 	# a successful rm a change applied -- without this a removal-only run (e.g.
 	# empty_files / not_found) ended with no end-of-run summary.
@@ -1043,24 +1063,37 @@ remove_ask(){
 	if _action_is ask;then
 		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
 		# Same stdin reroute as diff_ask — see comment there.
-		local _ans_fd=9
 		{ : <&9; } 2>/dev/null || _ans_fd=0
-		while read -u "${_ans_fd}" x;do
+		while true;do
+			if ! read -r -u "${_ans_fd}" x;then
+				printf '%b\n' "\n${red}No answer read${restore}; nothing removed"
+				return 1
+			fi
 			case ${x} in
 				Yes | YES | yes | Y | y | "" )
-					rm -rf "${1}" 2>/dev/null && _changes_applied=$(( _changes_applied + 1 ))
-					break;;
+					if rm -rf -- "${1}" 2>/dev/null;then
+						_changes_applied=$(( _changes_applied + 1 ))
+						eend 0 2>/dev/null
+						return 0
+					fi
+					eend 1 2>/dev/null
+					return 1;;
 				No | NO | no | N | n )
-					break;;
+					eend 0 2>/dev/null
+					return 0;;
 				* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 					continue;;
 			esac
 		done
-		eend $? 2>/dev/null
 	elif _action_is force;then
 		printf '%b\n' "${contrast}Removing${restore} ${green}${1}${restore}"
-		rm -rf "${1}" 2>/dev/null && _changes_applied=$(( _changes_applied + 1 ))
-		eend $? 2>/dev/null
+		if rm -rf -- "${1}" 2>/dev/null;then
+			_changes_applied=$(( _changes_applied + 1 ))
+			eend 0 2>/dev/null
+			return 0
+		fi
+		eend 1 2>/dev/null
+		return 1
 	elif _action_is pretend;then
 		eend 0 2>/dev/null
 	fi
@@ -1112,10 +1145,12 @@ sort_uniq_files(){
 		# blocks travel with their atom.  Trailing comments at end
 		# of file emit verbatim at the end.  Duplicate atoms are
 		# merged: per-atom opts are concatenated, deduplicated by
-		# token (first-seen wins for order).  Requires gawk for
-		# asorti — gawk is Gentoo's default awk (/usr/bin/awk
-		# symlinks to it).
-		awk '
+		# token (first-seen wins for order).  Inline annotations are parsed
+		# separately so `#` and its text can never become option tokens.  A
+		# unique entry keeps its annotation inline; annotations from duplicate
+		# entries are promoted to comment lines above the merged atom.  Requires
+		# gawk for asorti.
+		gawk '
 			function dedup_opts(s,    a, n, i, out, seen) {
 				delete seen
 				n = split(s, a, /[[:space:]]+/)
@@ -1136,12 +1171,27 @@ sort_uniq_files(){
 				opts = substr($0, length($1) + 1)
 				sub(/^[[:space:]]+/, "", opts)
 				sub(/[[:space:]]+$/, "", opts)
+				inline_comment = ""
+				if (match(opts, /[[:space:]]+#/) > 0) {
+					inline_comment = substr(opts, RSTART + RLENGTH - 1)
+					opts = substr(opts, 1, RSTART - 1)
+					sub(/[[:space:]]+$/, "", opts)
+				}
 				if (!(atom in atoms)) {
 					atoms[atom] = opts
-				} else if (opts != "") {
-					atoms[atom] = atoms[atom] " " opts
+					headers[atom] = pending_header
+					inline_comments[atom] = inline_comment
+				} else {
+					if (!(atom in duplicated)) {
+						if (inline_comments[atom] != "")
+							headers[atom] = headers[atom] inline_comments[atom] "\n"
+						inline_comments[atom] = ""
+						duplicated[atom] = 1
+					}
+					headers[atom] = headers[atom] pending_header
+					if (inline_comment != "") headers[atom] = headers[atom] inline_comment "\n"
+					if (opts != "") atoms[atom] = atoms[atom] " " opts
 				}
-				headers[atom] = headers[atom] pending_header
 				pending_header = ""
 			}
 			END {
@@ -1149,10 +1199,14 @@ sort_uniq_files(){
 				for (i = 1; i <= n; i++) {
 					a = sorted[i]
 					deduped = dedup_opts(atoms[a])
-					if (deduped == "")
+					if (deduped == "" && inline_comments[a] == "")
 						printf "%s%s\n", headers[a], a
-					else
+					else if (deduped == "")
+						printf "%s%s %s\n", headers[a], a, inline_comments[a]
+					else if (inline_comments[a] == "")
 						printf "%s%s %s\n", headers[a], a, deduped
+					else
+						printf "%s%s %s %s\n", headers[a], a, deduped, inline_comments[a]
 				}
 				if (pending_header != "") printf "%s", pending_header
 			}
@@ -1257,7 +1311,7 @@ sort_uses(){
 	# EOF emit verbatim.  Existing flagless atoms remain flagless instead
 	# of being discarded, and every header attached to duplicate atom
 	# occurrences is retained in original order.
-	awk '
+	gawk '
 		function resolve_uses(tokens,    a, n, i, j, base, last_state, ordering, bases, nb, tmp, out) {
 			delete last_state
 			delete ordering
@@ -1306,11 +1360,21 @@ sort_uses(){
 			if (!(atom in atoms)) {
 				atoms[atom] = rest
 				inline_comments[atom] = inline_comment
+				headers[atom] = pending_header
 			} else {
+				# Once an atom is duplicated, promote every occurrence inline
+				# annotation into its preserved header block.  Keeping only the
+				# first annotation silently discarded the others.
+				if (!(atom in duplicated)) {
+					if (inline_comments[atom] != "")
+						headers[atom] = headers[atom] inline_comments[atom] "\n"
+					inline_comments[atom] = ""
+					duplicated[atom] = 1
+				}
+				headers[atom] = headers[atom] pending_header
+				if (inline_comment != "") headers[atom] = headers[atom] inline_comment "\n"
 				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
-				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
 			}
-			headers[atom] = headers[atom] pending_header
 			pending_header = ""
 		}
 
@@ -1416,7 +1480,7 @@ sort_keys(){
 	# default to ~$ARCH (matches the legacy `${keys:-"~${ARCH}"}`
 	# fallback); never dropped.  Header blocks travel with their atom
 	# on sort; trailing comments emit verbatim at EOF.
-	awk -v arch="${ARCH}" '
+	gawk -v arch="${ARCH}" '
 		function resolve_keys(tokens,    a, n, i, j, base, last_state, ordering, bases, nb, tmp, out) {
 			delete last_state
 			delete ordering
@@ -1459,11 +1523,18 @@ sort_keys(){
 			if (!(atom in atoms)) {
 				atoms[atom] = rest
 				inline_comments[atom] = inline_comment
+				headers[atom] = pending_header
 			} else {
+				if (!(atom in duplicated)) {
+					if (inline_comments[atom] != "")
+						headers[atom] = headers[atom] inline_comments[atom] "\n"
+					inline_comments[atom] = ""
+					duplicated[atom] = 1
+				}
+				headers[atom] = headers[atom] pending_header
+				if (inline_comment != "") headers[atom] = headers[atom] inline_comment "\n"
 				atoms[atom] = (atoms[atom] == "" ? rest : atoms[atom] " " rest)
-				if (inline_comments[atom] == "") inline_comments[atom] = inline_comment
 			}
-			headers[atom] = headers[atom] pending_header
 			pending_header = ""
 		}
 
@@ -1497,9 +1568,10 @@ sort_keywords(){
 		# Same shape as sort_keys but per-atom keyword resolution
 		# differs: keep ONLY the absolute last token (across all
 		# duplicate atom lines), not last-state-per-base.  Empty
-		# default to ~$ARCH.  Inline comments carry from the first
-		# occurrence; header blocks from every occurrence are retained.
-		awk -v arch="${ARCH}" '
+		# default to ~$ARCH.  A unique inline comment remains inline;
+		# annotations from duplicate occurrences are promoted into the
+		# retained header block so none are discarded.
+		gawk -v arch="${ARCH}" '
 			/^[[:space:]]*$|^[[:space:]]*#/ {
 				pending_header = pending_header $0 "\n"
 				next
@@ -1521,8 +1593,17 @@ sort_keywords(){
 				}
 				if (!(atom in atoms)) {
 					inline_comments[atom] = inline_comment
+					headers[atom] = pending_header
+				} else {
+					if (!(atom in duplicated)) {
+						if (inline_comments[atom] != "")
+							headers[atom] = headers[atom] inline_comments[atom] "\n"
+						inline_comments[atom] = ""
+						duplicated[atom] = 1
+					}
+					headers[atom] = headers[atom] pending_header
+					if (inline_comment != "") headers[atom] = headers[atom] inline_comment "\n"
 				}
-				headers[atom] = headers[atom] pending_header
 				atoms[atom] = last    # always overwrite — last occurrence wins
 				pending_header = ""
 			}
@@ -1754,9 +1835,12 @@ package_env(){
 }
 # env_not_installed: remove env/<cat>/<pn> files whose target package is not installed.
 env_not_installed(){
-	RM=""
+	local x files dirs file category pn pv pr slot full_ver slot_found
+	local _sf _s target
+	local -a remove_targets=()
 	printf '%b\n' "${underline}Looking not installed in${restore} ${contrast}${PORT_ETC}/env${restore}"
 	for x in "env" "env.d";do
+		remove_targets=()
 		# Env files live at env/<category>/<pn>[-ver][:slot], exactly two levels
 		# deep.  Take the LAST TWO path components (rev|cut|rev) rather than a
 		# fixed `cut -f5-`, which assumed a /etc/portage-depth root and mis-sliced
@@ -1767,7 +1851,9 @@ env_not_installed(){
 		# its parent.  Parent-first left env/ behind until the next invocation.
 		dirs="$(find "${PORT_ETC}/${x}/" -depth -type d 2>/dev/null || true)"
 		[[ -n "${IGNORE}" ]] && dirs="$(grep -v "${IGNORE}" <<< "${dirs}" || true)"
-		[[ -n "${files}" || -n "${dirs}" ]] || break
+		# env and env.d are independent namespaces.  An absent env must not
+		# prevent a populated env.d from being checked.
+		[[ -n "${files}" || -n "${dirs}" ]] || continue
 
 		while read -r file;do
 			[[ -z "${file}" ]] && continue
@@ -1791,14 +1877,14 @@ env_not_installed(){
 					# No version, no slot: any installed version satisfies it.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}"-[0-9]* &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
-						RM+="${PORT_ETC}/${x}/${file}%"
+						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
 				elif [[ -n "${pv}" && -z "${slot}" ]];then
 					# Pinned version must be installed.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}-${full_ver}" &>/dev/null;then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}-${full_ver}${restore}"
-						RM+="${PORT_ETC}/${x}/${file}%"
+						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
 				elif [[ -z "${pv}" && -n "${slot}" ]];then
@@ -1813,27 +1899,25 @@ env_not_installed(){
 					done
 					if [[ -z "${slot_found}" ]];then
 						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}:${slot}${restore}"
-						RM+="${PORT_ETC}/${x}/${file}%"
+						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
 				fi
 			done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]' "${file}" 2>/dev/null || true)"
 		done <<< "${files}"
 
-		# RM is one %-joined string ("p1%p2%p3"); env file names never contain
-		# % so split on it into one path per line BEFORE reading.  `IFS='%'
-		# read -r target` with a single var does NOT iterate per field -- it
-		# consumes the whole line in one pass and hands remove_ask the entire
-		# "p1%p2%p3" blob as a single bogus path, so with two or more stale env
-		# files in one run NONE are removed (rm -rf on the nonexistent combined
-		# path -f-no-ops).  A single stale file happened to work, which is why
-		# every existing test (one file each) passed.
-		while IFS= read -r target; do
-			[[ -z "${target}" ]] && continue
+		# Keep each subtree's removals in an array so env entries are neither
+		# collapsed into one path nor replayed while env.d is processed.
+		for target in "${remove_targets[@]}";do
 			remove_ask "${target}"
-		done <<< "$(tr '%' $'\n' <<< "${RM%\%}")"
+		done
 		while IFS= read -r target; do
-			[[ -z "$(ls "${target}")" ]] && remove_ask "${target}"
+			[[ -d "${target}" ]] || continue
+			# ls without -A treated dotfile-only directories as empty.  find gives
+			# the pruning pass an exact, hidden-file-aware emptiness check.
+			if ! find "${target}" -mindepth 1 -maxdepth 1 -print -quit | grep -q .;then
+				remove_ask "${target}"
+			fi
 		done <<< "${dirs}"
 	done
 	eend $? 2>/dev/null
@@ -2340,7 +2424,8 @@ f_to_d(){
 # d_to_f: convert package.* from directory layout back to flat-file.
 d_to_f(){
 	local -a convert_targets=() convert_stages=()
-	local i
+	local -a subfiles=()
+	local i j subfile last_byte
 	while IFS= read -r package;do
 		if [[ -d "${package}" ]];then
 			printf '%b\n' "${underline}Processing${restore}: ${contrast}${package##*/}${restore}"
@@ -2352,7 +2437,9 @@ d_to_f(){
 			fi
 			_confirm_action "Convert ${package##*/} from directory to file?" || continue
 			tmp_file="$(_mktemp_near "${package}")" || return 1
-			while IFS= read -r subfile; do
+			mapfile -t subfiles < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
+			for (( j=0; j<${#subfiles[@]}; j++ ));do
+				subfile="${subfiles[j]}"
 				# cat, not a `while read line; echo` loop: read without -r
 				# mangles backslashes and the default IFS strips leading
 				# whitespace -- cat copies each sub-file's bytes verbatim.
@@ -2360,7 +2447,14 @@ d_to_f(){
 					printf '%b\n' "${red}Could not read${restore} ${subfile}; ${package} unchanged"
 					return 1
 				fi
-			done < <(find "${package}" -type f \! -name '*~' \! -name '*.bak' | sort)
+				# A package.* fragment is line-oriented, but editors may leave its
+				# final line unterminated.  Add only the missing boundary newline so
+				# the first atom of the next fragment cannot be glued to that line.
+				if (( j + 1 < ${#subfiles[@]} )) && [[ -s "${subfile}" ]];then
+					last_byte="$(tail -c 1 -- "${subfile}"; printf x)"
+					[[ "${last_byte}" == $'\nx' ]] || printf '\n' >> "${tmp_file}"
+				fi
+			done
 			_prepare_conversion_metadata "${package}" "${tmp_file}" dir_to_file || return 1
 			convert_targets+=("${package}")
 			convert_stages+=("${tmp_file}")
@@ -2959,6 +3053,7 @@ regen_world(){
 
 # overlays: remove unused overlays from $PORT_ETC/repos.conf and stale $DEP_PATH metadata.
 overlays(){
+	local _confirm_rc
 	UNUSED=""
 	TRASH_REPO=""
 	bad_links=""
@@ -2966,6 +3061,7 @@ overlays(){
 	good_links=""
 	portage_overlays=""
 	remove_bad_links=""
+	enough=""
 	# stop is set inside fix_deps() when there's nothing left to clean
 	# and consumed by the outer dep-cache loop.  Pre-declare to avoid
 	# `unbound variable` under set -u on the first loop iteration.
@@ -3033,33 +3129,68 @@ overlays(){
 		echo "${bad_links}"
 		if _action_is pretend;then
 			printf '%b\n' "Would remove the broken symlink(s) above (${contrast}dry-run${restore})"
-		elif _confirm_action "Remove the broken symlink(s) above?";then
-			remove_bad_links=1
+		else
+			if _confirm_action "Remove the broken symlink(s) above?";then
+				remove_bad_links=1
+			elif (( $? == 2 ));then
+				return 1
+			fi
 		fi
 	fi
 
 	choose_target(){
-		PS3="$(printf '%b\n' "${contrast}Choose repo which you want save:${restore} ")"
-		select target in ${UNUSED};do
-			echo "${target}"
-			break
+		local answer_fd="$1" selection index
+		local -a choices=()
+		mapfile -t choices < <(sed '/^$/d' <<< "${UNUSED}")
+		for (( index=0; index<${#choices[@]}; index++ ));do
+			printf '%s\n' "$(( index + 1 ))) ${choices[index]}" >&2
+		done
+		while true;do
+			printf '%b' "${contrast}Choose repository to preserve:${restore} " >&2
+			if ! read -r -u "${answer_fd}" selection;then
+				return 1
+			fi
+			if [[ "${selection}" =~ ^[0-9]+$ ]] &&
+				(( selection >= 1 && selection <= ${#choices[@]} ));then
+				printf '%s\n' "${choices[selection-1]}"
+				return 0
+			fi
+			printf '%b\n' "${red}Invalid choice${restore}" >&2
 		done
 	}
 	ask(){
+		local x y selected _ans_fd=9
+		{ : <&9; } 2>/dev/null || _ans_fd=0
 		[[ -n "${UNUSED}" ]] && printf '%b\n' "Unused repos:\n${UNUSED}"
 		if [[ -n "$(sed '/^$/d' <<< "${UNUSED}")" ]];then
-			printf '%b' "\n${contrast}Would you like save some repo(s)?${restore} [${green}Yes${restore}/${red}No${restore}] "
-			while read x;do
+			printf '%b' "\n${contrast}Would you like to preserve some repo(s)?${restore} [${green}Yes${restore}/${red}No${restore}] "
+			while true;do
+				if ! read -r -u "${_ans_fd}" x;then
+					printf '%b\n' "\n${red}No answer read${restore}; repository cleanup aborted"
+					return 1
+				fi
 				[[ -z "$(sed '/^$/d' <<< "${UNUSED}")" ]] && break
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
-						UNUSED="$(grep -v "^$(choose_target)$" <<< "${UNUSED}" || true)"
+						if ! selected="$(choose_target "${_ans_fd}")";then
+							printf '%b\n' "\n${red}No selection read${restore}; repository cleanup aborted"
+							return 1
+						fi
+						UNUSED="$(grep -Fvx -- "${selected}" <<< "${UNUSED}" || true)"
 						while [[ -z "${enough}" && "$(echo "${UNUSED// /$'\n'}" | sed '/^$/d' | wc -l)" != "0" ]];do
 							printf '%b' "${contrast}More?${restore} [${green}Yes${restore}/${red}No${restore}] "
-							while read y;do
+							while true;do
+								if ! read -r -u "${_ans_fd}" y;then
+									printf '%b\n' "\n${red}No answer read${restore}; repository cleanup aborted"
+									return 1
+								fi
 								case ${y} in
 									Yes | YES | yes | Y | y | "" )
-										UNUSED="$(grep -v "^$(choose_target)$" <<< "${UNUSED}" || true)"
+										if ! selected="$(choose_target "${_ans_fd}")";then
+											printf '%b\n' "\n${red}No selection read${restore}; repository cleanup aborted"
+											return 1
+										fi
+										UNUSED="$(grep -Fvx -- "${selected}" <<< "${UNUSED}" || true)"
 										break;;
 									No | NO | no | N | n )
 										enough="1"
@@ -3074,8 +3205,24 @@ overlays(){
 						break;;
 					* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] "
 						continue;;
-				esac
+					esac
 			done
+			if [[ -n "$(sed '/^$/d' <<< "${UNUSED}")" ]];then
+				printf '%b\n' "Repositories selected for removal:\n${UNUSED}"
+				printf '%b' "${contrast}Remove these unused repositories?${restore} [${green}Yes${restore}/${red}No${restore}] "
+				while true;do
+					if ! read -r -u "${_ans_fd}" x;then
+						printf '%b\n' "\n${red}No answer read${restore}; repository cleanup aborted"
+						return 1
+					fi
+					case ${x} in
+						Yes | YES | yes | Y | y | "" ) return 0;;
+						No | NO | no | N | n ) UNUSED=""; return 0;;
+						* ) printf '%b' "Sorry, response '${x}' not understood. [${green}Yes${restore}/${red}No${restore}] ";;
+					esac
+				done
+			fi
+			return 0
 		else
 			return 0
 		fi
@@ -3121,7 +3268,7 @@ overlays(){
 	# Interactive mode preserves the historical "save selected repos" flow;
 	# force removes every unused repo, while pretend only reports the set.
 	if _action_is ask;then
-		ask
+		ask || return 1
 	elif [[ -n "${UNUSED}" ]] && _action_is pretend;then
 		printf '%b\n' "Unused repos (would remove):\n${UNUSED}"
 	fi
@@ -3176,7 +3323,21 @@ overlays(){
 				printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|would remove:\\${green}|;s|$|\\${restore}|")"
 				break
 			fi
-			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|staging removal:\\${green}|;s|$|\\${restore}|")"
+			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|dependency-cache candidate: \\${green}|;s|$|\\${restore}|")"
+			if _action_is ask;then
+				if _confirm_action "Remove the dependency-cache entries above?";then
+					:
+				else
+					_confirm_rc=$?
+					if (( _confirm_rc == 2 ));then
+						_txn_rollback || true
+						return 1
+					fi
+					stop="true"
+					break
+				fi
+			fi
+			printf '%b\n' "$(tr ' ' $'\n' <<< "${trash% }" | sed "s|^|staging removal: \\${green}|;s|$|\\${restore}|")"
 			# fix_deps intentionally emits a space-separated list whose glob
 			# entries must expand to individual cache paths.
 			# shellcheck disable=SC2086

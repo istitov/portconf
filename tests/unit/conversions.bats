@@ -179,6 +179,22 @@ teardown() {
 	assert_output "dev-libs/baz qux"
 }
 
+@test "d_to_f: inserts a boundary after an unterminated non-final fragment" {
+	mkdir -p "${TEST_PORT_ETC}/package.use"
+	printf 'app-misc/foo bar' > "${TEST_PORT_ETC}/package.use/app-misc"
+	printf 'dev-libs/baz qux\n' > "${TEST_PORT_ETC}/package.use/dev-libs"
+	d_to_f
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf 'app-misc/foo bar\ndev-libs/baz qux')"
+}
+
+@test "d_to_f: preserves an unterminated final fragment byte-for-byte" {
+	mkdir -p "${TEST_PORT_ETC}/package.use"
+	printf 'app-misc/foo bar' > "${TEST_PORT_ETC}/package.use/app-misc"
+	d_to_f
+	[[ "$(tail -c 1 "${TEST_PORT_ETC}/package.use"; printf x)" == "rx" ]]
+}
+
 @test "d_to_f: skips existing flat files" {
 	printf '%s\n' "app-misc/foo bar" > "${TEST_PORT_ETC}/package.use"
 	d_to_f

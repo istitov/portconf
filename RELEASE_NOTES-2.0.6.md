@@ -14,7 +14,12 @@ handling, and rewrite invariants substantially harder to violate.
   ordinary failure.
 - Applying invocations take an exclusive advisory lock. Concurrent dry-runs
   remain available.
-- Rewrites and file/directory conversions preserve access metadata.
+- Ordinary rewrites preserve supported access metadata. File/directory
+  conversions map POSIX mode and ownership without claiming cross-type ACL or
+  xattr equivalence.
+- Interactive repository cleanup aborts safely on EOF and positively confirms
+  both repository and dependency-cache removals while retaining selective
+  repository preservation.
 
 ### Exact command-line behavior
 
@@ -28,18 +33,22 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Data-preserving cleanup
 
-- Sorting keeps flagless `package.use` atoms and all header-comment blocks
-  attached to duplicate atom occurrences.
+- Sorting keeps flagless `package.use` atoms, every header-comment block, and
+  every inline annotation attached to duplicate atom occurrences. Inline
+  comments are never parsed as option tokens.
 - Trash/full cleanup removes stale nested env targets before pruning their
   `package.env` references, completes the rewrite in one pass, preserves useful
   annotations, and removes newly empty directories deepest-first.
 - Temp cleanup, backup rotation, eix-cache lifetime, qatom parsing, environment
   cleanup, mask/keyword decisions, overlay cleanup, and status accounting have
   all received additional correctness hardening.
+- Restore inventories cannot mix etc, world, or foreign archives; conversion
+  fragments with missing final newlines cannot concatenate adjacent atoms; and
+  `env.d` is processed independently from `env`.
 
 ### Verification
 
-The release passes 463 automated tests: 281 unit, 107 integration, 53 smoke,
+The release passes 484 automated tests: 291 unit, 117 integration, 54 smoke,
 and 22 property tests. The property tier now directly checks that exact
 removal never changes a sibling and that rejected restore archives leave the
 live tree unchanged.
@@ -70,7 +79,9 @@ cd portconf
 autoreconf -i && ./configure && make && sudo make install
 ```
 
-### Verify
+### Verify published artifacts
+
+Once the release artifacts and signed tag are published:
 
 ```sh
 sha256sum -c portconf-2.0.6.tar.xz.sha256
@@ -78,7 +89,7 @@ gpg --verify portconf-2.0.6.tar.xz.asc portconf-2.0.6.tar.xz
 git tag -v 2.0.6
 ```
 
-The release tag is signed with EDDSA key
+The release tag will be signed with EDDSA key
 `0CAC B6D9 B849 3DB5 8470 0971 3EB2 3EA8 4387 95B7`.
 
 ---

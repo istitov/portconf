@@ -53,10 +53,22 @@ teardown() {
 }
 
 @test "_drop_line: no-op when VALUE is absent" {
+	local before
 	printf '%s\n' 'cat/a' 'cat/b' > "${_f}"
+	before="$(stat -c %i "${_f}")"
 	_drop_line "${_f}" 'cat/zzz'
 	run cat "${_f}"
 	assert_output "$(printf 'cat/a\ncat/b')"
+	[[ "$(stat -c %i "${_f}")" == "${before}" ]]
+}
+
+@test "_drop_line: absent value preserves an unterminated file exactly" {
+	local before
+	printf 'cat/a' > "${_f}"
+	before="$(stat -c %i "${_f}")"
+	_drop_line "${_f}" 'cat/zzz'
+	[[ "$(stat -c %i "${_f}")" == "${before}" ]]
+	[[ "$(tail -c 1 "${_f}"; printf x)" == "ax" ]]
 }
 
 @test "_drop_line: matches modulo surrounding whitespace" {

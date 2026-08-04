@@ -11,9 +11,9 @@
 #   4. Build UNUSED = repos.conf entries (except DEFAULT and gentoo) that
 #      aren't anyone's parent.
 #
-# After detection it prompts interactively to remove things (bad symlinks,
-# unused overlays).  Tests pipe enough "No" responses to dismiss every
-# prompt so the function completes without mutation.
+# After detection it prompts interactively to preserve selected repositories,
+# positively confirm the remaining removals, and confirm dependency-cache
+# cleanup.  EOF must abort rather than authorize a mutation.
 #
 # Sandboxing via the PORT_ETC and PKGDB env-var overrides made available
 # by the source-side overridability round (see commit history).
@@ -27,6 +27,7 @@ setup() {
 	# the function definition captures the stub closure.
 	load_portconf
 	make_test_portage
+	_set_action_mode ask
 	tput() { :; }
 
 	# Sandbox PKGDB to an empty tree by default; individual tests populate
@@ -74,8 +75,8 @@ EOF
 	mkdir -p "${fake_loc}"
 	_declare_overlay "myoverlay" "${fake_loc}"
 	_install_pkg "sys-apps/grep-1.0" "gentoo"
-	# Pipe "No" to every prompt: dismiss bad-link prompt + unused-overlay
-	# prompt + their "More?" follow-ups.  Six "No"s is overkill but safe.
+	# Decline selective preservation, then decline the positive removal
+	# confirmation.  Extra "No" responses are harmless.
 	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
 	[[ "${output}" == *'myoverlay'* ]]
 }
@@ -148,8 +149,8 @@ EOF
 	_install_pkg "sys-apps/grep-1.0" "gentoo"
 	local calls="${BATS_TEST_TMPDIR}/eselect.calls"
 	eselect() { printf '%s\n' "$*" >> "${calls}"; return 0; }
-	# "No" to the save-prompt so localov stays UNUSED and reaches removal.
-	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
+	# Preserve none, then positively confirm removal.
+	run overlays <<< $'No\nYes\n'
 	[ -f "${calls}" ]
 	grep -qF 'repository remove -f localov' "${calls}"
 }
@@ -161,11 +162,12 @@ EOF
 	_install_pkg "sys-apps/grep-1.0" "gentoo"
 	# Simulate eselect declining the removal (e.g. run as non-root).
 	eselect() { return 1; }
-	run overlays <<< $'No\nNo\nNo\nNo\nNo\nNo\n'
+	run overlays <<< $'No\nYes\n'
 	[[ "${output}" == *'eselect repository remove -f stubborn'* ]]
 }
 
 @test "overlays: later repository failure rolls back config, trees, and broken links" {
+	_set_action_mode force
 	local repo_a="${BATS_TEST_TMPDIR}/repo-a"
 	local repo_b="${BATS_TEST_TMPDIR}/repo-b"
 	local active="${BATS_TEST_TMPDIR}/active-repo"
@@ -218,7 +220,7 @@ EOF
 	# repos.conf -> no prompt is read before the dep-cache loop).
 	run timeout 20 env \
 		PORT_ETC="${PORT_ETC}" PKGDB="${PKGDB}" DEP_PATH="${DEP_PATH}" \
-		bash -c 'PORTCONF_NO_MAIN=1 source "$1"; overlays </dev/null' \
+		bash -c 'PORTCONF_NO_MAIN=1 source "$1"; _set_action_mode force; overlays </dev/null' \
 		_ "${BATS_TEST_DIRNAME}/../../src/portconf.in"
 
 	# 124 == timeout killed it == the loop never terminated == bug present.
@@ -226,4 +228,56 @@ EOF
 	# And the stale entries must actually be gone (the no-op rm left them).
 	[ ! -d "${dep_a}" ]
 	[ ! -d "${dep_b}" ]
+}
+
+@test "overlays: ask-mode EOF leaves repository tree and config untouched" {
+	local repo="${BATS_TEST_TMPDIR}/eof-repo"
+	mkdir -p "${repo}"
+	_declare_overlay "eof-repo" "${repo}"
+	local calls="${BATS_TEST_TMPDIR}/eselect.calls"
+	eselect() { printf '%s\n' "$*" >> "${calls}"; }
+	run overlays </dev/null
+	[ "$status" -ne 0 ]
+	[ -d "${repo}" ]
+	[ -f "${PORT_ETC}/repos.conf/eof-repo.conf" ]
+	[ ! -e "${calls}" ]
+	[[ "${output}" == *'repository cleanup aborted'* ]]
+}
+
+@test "overlays: declining the positive removal confirmation preserves all repos" {
+	local repo="${BATS_TEST_TMPDIR}/declined-repo"
+	mkdir -p "${repo}"
+	_declare_overlay "declined" "${repo}"
+	run overlays <<< $'No\nNo\n'
+	[ "$status" -eq 0 ]
+	[ -d "${repo}" ]
+	[ -f "${PORT_ETC}/repos.conf/declined.conf" ]
+}
+
+@test "overlays: selected repository is preserved while confirmed remainder is removed" {
+	local repo_a="${BATS_TEST_TMPDIR}/repo-a"
+	local repo_b="${BATS_TEST_TMPDIR}/repo-b"
+	mkdir -p "${repo_a}" "${repo_b}"
+	_declare_overlay "repo-a" "${repo_a}"
+	_declare_overlay "repo-b" "${repo_b}"
+	eselect() {
+		rm -f "${PORT_ETC}/repos.conf/$4.conf"
+		return 0
+	}
+	# Preserve repo-a (choice 1), preserve no more, then remove repo-b.
+	run overlays <<< $'Yes\n1\nNo\nYes\n'
+	[ "$status" -eq 0 ]
+	[ -d "${repo_a}" ]
+	[ -f "${PORT_ETC}/repos.conf/repo-a.conf" ]
+	[ ! -d "${repo_b}" ]
+	[ ! -f "${PORT_ETC}/repos.conf/repo-b.conf" ]
+}
+
+@test "overlays: ask mode confirms dependency-cache cleanup" {
+	local dep_entry="${DEP_PATH}/gone-repo-ask-$$"
+	mkdir -p "${dep_entry}"
+	run overlays <<< $'Yes\n'
+	[ "$status" -eq 0 ]
+	[ ! -d "${dep_entry}" ]
+	[[ "${output}" == *'Remove the dependency-cache entries above?'* ]]
 }

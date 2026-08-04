@@ -22,6 +22,7 @@ RDEPEND="
 	app-admin/eselect
 	app-portage/eix
 	app-portage/portage-utils
+	dev-lang/gawk
 	dev-libs/tre
 	sys-apps/portage
 	sys-apps/util-linux
@@ -41,13 +42,14 @@ BDEPEND="
 		app-admin/eselect
 		app-portage/eix
 		app-portage/portage-utils
+		dev-lang/gawk
 		dev-libs/tre
 		sys-apps/portage
 		sys-apps/util-linux
 	)
 "
 
-DOCS=( ChangeLog README.md INSTALL )
+DOCS=( ChangeLog README.md INSTALL SECURITY.md RELEASE_NOTES-2.0.6.md )
 
 src_prepare() {
 	default

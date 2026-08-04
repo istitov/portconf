@@ -69,6 +69,16 @@ teardown() {
 	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo **')"
 }
 
+@test "sort_keywords: inline annotations from every duplicate are preserved" {
+	printf '%s\n' \
+		"app-misc/foo ~amd64 # first reason" \
+		"app-misc/foo ** # second reason" \
+		> "${TEST_PORT_ETC}/package.accept_keywords"
+	sort_keywords
+	run cat "${TEST_PORT_ETC}/package.accept_keywords"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo **')"
+}
+
 # --- default keyword ---
 
 @test "sort_keywords: atom without keyword — gets ~ARCH added" {

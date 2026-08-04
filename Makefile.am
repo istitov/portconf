@@ -73,12 +73,19 @@ EXTRA_DIST = \
 # Override BATS to point at a non-system bats binary if needed.
 BATS = bats
 
-# 'make check' runs the unit suite only — no external tool deps beyond bats.
+# 'make check' runs the unit suite.  Sourcing portconf requires eix + gawk;
+# conversion tests also exercise qatom from portage-utils.
 check-local:
 	@command -v $(BATS) >/dev/null || { \
 	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \
 	  exit 1; \
 	}
+	@for tool in eix qatom gawk; do \
+	  command -v $$tool >/dev/null || { \
+	    echo "error: $$tool not on PATH (see INSTALL for unit test deps)" >&2; \
+	    exit 1; \
+	  }; \
+	done
 	$(BATS) $(srcdir)/tests/unit/
 
 # 'make check-integration' runs the integration suite.
@@ -89,7 +96,7 @@ check-integration:
 	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \
 	  exit 1; \
 	}
-	@for tool in eix qatom agrep; do \
+	@for tool in eix qatom agrep gawk; do \
 	  command -v $$tool >/dev/null || { \
 	    echo "error: $$tool not on PATH (see INSTALL for integration test deps)" >&2; \
 	    exit 1; \
@@ -100,8 +107,9 @@ check-integration:
 # 'make check-smoke' runs the built src/portconf binary against the real
 # Portage tree.  Requires the binary to be built (autoreconf -i && configure
 # && make) and a Gentoo host with eselect/eix and a resolvable profile.
-# Only exercises read-only flags — no /etc/portage or /var/lib/portconf
-# touch.  See tests/smoke/test_helper.bash for scope rationale.
+# Exercises read-only flags against the host and every mutating dispatch arm
+# against throwaway roots; it never mutates host /etc/portage or BRDIR.
+# See tests/smoke/test_helper.bash for scope rationale.
 check-smoke:
 	@command -v $(BATS) >/dev/null || { \
 	  echo "error: $(BATS) not on PATH; install dev-util/bats" >&2; \

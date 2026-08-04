@@ -144,6 +144,15 @@ write_use() { printf '%s\n' "$@" > "${TEST_PORT_ETC}/package.use"; }
 	assert_output "app-misc/foo bar # keep this"
 }
 
+@test "sort_uses: inline annotations from every duplicate are preserved" {
+	write_use \
+		"app-misc/foo bar # first reason" \
+		"app-misc/foo baz # second reason"
+	sort_use_file
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo bar baz')"
+}
+
 @test "sort_uses: header + atom + inline comment combine cleanly" {
 	# All three pieces should survive: the leading header block, the
 	# atom + flag, and the trailing inline comment.

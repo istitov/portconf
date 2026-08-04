@@ -78,8 +78,13 @@ _tree_fingerprint() {
 	local root="$1"
 	(
 		cd "${root}"
-		find . -printf '%P|%y|%m|%l\n' | sort
+		# Include ownership and modification time as well as topology, mode,
+		# symlink target, and content.  ACL/xattr inventories join the digest
+		# when their standard tools are installed.
+		find . -printf '%P|%y|%m|%U|%G|%T@|%l\n' | sort
 		find . -type f -print0 | sort -z | xargs -0 -r sha256sum
+		if command -v getfacl >/dev/null;then getfacl -R -p . 2>/dev/null || true;fi
+		if command -v getfattr >/dev/null;then getfattr -R -d -m- . 2>/dev/null || true;fi
 	) | sha256sum | awk '{ print $1 }'
 }
 

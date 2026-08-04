@@ -152,3 +152,20 @@ teardown() {
 	run cat "${TEST_PORT_ETC}/package.use"
 	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo bar baz')"
 }
+
+@test "sort_uniq_files: a unique inline annotation stays inline" {
+	printf '%s\n' "app-misc/foo bar # local reason" > "${TEST_PORT_ETC}/package.use"
+	sort_uniq_files
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "app-misc/foo bar # local reason"
+}
+
+@test "sort_uniq_files: duplicate inline annotations never become option tokens" {
+	printf '%s\n' \
+		"app-misc/foo bar # first reason" \
+		"app-misc/foo baz # second reason" \
+		> "${TEST_PORT_ETC}/package.use"
+	sort_uniq_files
+	run cat "${TEST_PORT_ETC}/package.use"
+	assert_output "$(printf '# first reason\n# second reason\napp-misc/foo bar baz')"
+}

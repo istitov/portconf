@@ -1,4 +1,4 @@
-2026-08-03  Ivan S. Titov  <iohann.s.titov@gmail.com>
+2026-08-04  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
 	2.0.6 — "Safety Net"
 
@@ -15,6 +15,11 @@
 	* Applying processes are serialized with an exclusive advisory lock.
 	* Rewrites preserve access metadata; file/directory conversions map the
 	  existing mode and ownership onto the new representation.
+	* --ask repository cleanup now aborts on EOF, positively confirms the
+	  remaining repository set and dependency-cache removals, and retains the
+	  historical ability to select individual repositories for preservation.
+	* remove_ask propagates removal failures and reports EOF as an abort instead
+	  of returning success after doing nothing.
 
 	Correctness:
 	* Temp cleanup survives command-substitution subshells; backup rotation,
@@ -42,13 +47,27 @@
 	* Trash/full cleanup removes stale nested env targets before pruning their
 	  package.env references, and prunes every missing reference in one rewrite;
 	  the result is complete in one pass and idempotent on a real config copy.
+	* env.d is checked even when env is absent, each subtree has an independent
+	  removal list, and dotfile-only directories are no longer pruned as empty.
+	* Directory-to-file conversion inserts a missing newline only between
+	  fragments, preventing adjacent atoms from being concatenated while
+	  preserving the final fragment's exact termination.
+	* Generic, USE, and keyword sorting parse inline comments separately from
+	  option tokens and preserve annotations from every duplicate occurrence.
+	* Restore inventories are prefix-scoped, so etc/world/foreign bz2 files
+	  cannot be mixed; external profile symlinks remain supported while writes
+	  through archived links fail in staging before the live swap.
+	* Exact-removal no-ops retain the original inode and metadata.
 
 	Build:
 	* configure.ac and the man page identify the final 2.0.6 release; make dist
 	  emits portconf-2.0.6.tar.xz.
+	* The ebuild and install documentation declare the startup-time gawk
+	  dependency; SECURITY.md, release notes, and the test preflight are shipped
+	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 463 automated tests pass: 281 unit, 107 integration, 53 smoke, and 22
+	* 484 automated tests pass: 291 unit, 117 integration, 54 smoke, and 22
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the
@@ -291,10 +310,10 @@
 	  (anchored to exclude single-token comment lines) so the UI
 	  shape is unchanged.
 	* src/portconf.in (startup): gawk runtime probe.  Both sort_*
-	  rewrites use `asorti()` which is gawk-only; non-gawk awk
-	  installs (busybox, mawk, eselect-overridden) now fail loudly
-	  at script start with an `emerge dev-lang/gawk && eselect awk
-	  set gawk` hint, not mid-mutation with an opaque error.
+	  rewrites use `asorti()` which is gawk-only; they invoke gawk directly
+	  instead of requiring a system-wide eselect awk change, and a missing
+	  dependency fails loudly at startup with an emerge hint rather than
+	  mid-mutation with an opaque error.
 	* src/portconf.in (not_found): the first `eix -Ttc` was unguarded
 	  under set -e while its sibling already had `|| true`.  eix's test
 	  mode exits non-zero when it finds entries, so portconf -t/-f/-fr

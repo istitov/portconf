@@ -11,8 +11,8 @@ Currently maintained by [istitov](https://github.com/istitov/portconf).
 Version 2.0.0 marked the first release of the maintained fork: a thorough
 modernisation of the inherited script with an autotools build system,
 env-overridable system paths for sandboxing, and 15 latent bugs fixed.  The
-current tree is protected by a 463-test suite across four tiers (281 unit / 107
-integration / 53 smoke / 22 property).
+current tree is protected by a 484-test suite across four tiers (291 unit / 117
+integration / 54 smoke / 22 property).
 See [`ChangeLog`](ChangeLog) for the full breakdown.
 
 The 2.0.0 modernization was carried out with heavy use of the Claude
@@ -40,7 +40,8 @@ smoke test layers, shellcheck, and `make distcheck` before landing.
   (including in `/etc/portage/env`)
 
 ### Backups
-- Auto-backup `/etc/portage` (+ `make.conf`, `world`) before any change
+- Auto-backup `/etc/portage` before package-configuration rewrites and layout conversions
+- Back up `world` before regeneration; repository cleanup uses its transactional undo journal
 - Configurable retention count (default: 10)
 - Restore to any saved state
 
@@ -89,8 +90,10 @@ interleaving their backups or undo journals.  Dry-runs and read-only queries do
 not take the lock.
 
 Rewritten files retain their existing permissions, ownership, ACL-compatible
-mode metadata, and supported extended attributes.  Layout conversions map the
-same access policy between file and directory forms instead of forcing `0644`.
+mode metadata, and supported extended attributes.  Layout conversions map
+POSIX mode and ownership between file and directory forms instead of forcing
+`0644`; they do not invent equivalent directory ACLs/xattrs when the source is
+a regular file, or vice versa.
 
 ---
 
@@ -129,7 +132,7 @@ The config-file path itself honors the `PORTCONF_CONF` env var; see below.
 
 ## Environment overrides (for chroots, sandboxes, test harnesses)
 
-The six system path roots are env-overridable.  Defaults match the canonical
+Seven path settings are env-overridable.  Defaults match the canonical
 modern Gentoo layout; override only if you know what you're doing — pointing
 them at the wrong location can sweep or modify real system state.
 
@@ -140,6 +143,7 @@ PKGDB          installed-package db  (default: /var/db/pkg)
 WORLD          world file            (default: /var/lib/portage/world)
 DEP_PATH       eix dep-cache root    (default: /var/cache/edb/dep)
 PORTCONF_CONF  config-file path      (default: /etc/portconf.conf)
+PORTCONF_LOCK_FILE writer lock path  (default: BRDIR/.portconf.lock)
 ```
 
 ---

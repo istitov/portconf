@@ -30,10 +30,12 @@ If GitHub PVR is unavailable, email <iohann.s.titov@gmail.com>.
   2.0.0 HIGH#1 fix (`_sed_escape_pat` / `_sed_escape_rep` helpers) is
   the reference; any new unescaped interpolation site qualifies.
 
-- **Out-of-root-path writes** — operations that mutate files outside
-  the six declared path roots: `$PORT_ETC`, `$BRDIR`, `$PKGDB`,
-  `$WORLD`, `$DEP_PATH`, `$PORTCONF_CONF`.  Path traversal via `../`
-  in atom names; tar-side traversal via a crafted backup tarball; etc.
+- **Out-of-scope-path writes** — operations that mutate files outside the
+  declared mutation targets: `$PORT_ETC`, `$BRDIR`, `$WORLD`, `$DEP_PATH`,
+  `$PORTCONF_LOCK_FILE`, and repository locations explicitly declared in
+  `repos.conf` when repository cleanup is confirmed or forced.  `$PKGDB` and
+  `$PORTCONF_CONF` are read-only inputs.  Path traversal via `../` in atom
+  names or tar-side traversal via a crafted backup tarball remains in scope.
 
 - **`--pretend` bypass** — any code path that mutates state when `-p`
   is in effect, or when neither `--ask` nor `--force` was supplied.

@@ -18,7 +18,7 @@ The ebuild handles the correct install paths and dependencies automatically.
 
 From source (manual)
 --------------------
-Requirements: autoconf >= 2.69, automake >= 1.13, bash, sed.
+Requirements: autoconf >= 2.69, automake >= 1.13, bash, sed, and gawk.
 
     autoreconf -i          # only needed from a git checkout
     ./configure
@@ -45,6 +45,7 @@ portconf requires the following tools at runtime:
 
     app-portage/eix
     app-portage/portage-utils   (qlist, qatom)
+    dev-lang/gawk               (invoked directly for asorti)
     sys-apps/portage            (emerge, eselect)
     sys-apps/util-linux         (flock)
 
@@ -59,13 +60,16 @@ run.  The historical -y / --yes option remains an alias for --force.
 Destructive multi-step operations stage replacements beside their targets and
 roll back the batch on ordinary failures.  Restore archives are validated and
 extracted into staging before any live path is replaced.
-Ordinary rewrites preserve access metadata; file/directory conversions map the
-existing permissions and ownership onto the new layout.
+Ordinary rewrites preserve mode, ownership, ACL-compatible mode metadata, and
+supported extended attributes.  File/directory conversions map POSIX mode and
+ownership onto the new layout; they do not synthesize a directory ACL/xattr
+policy from a regular file or vice versa.
 
 
 Running the test suite
 ----------------------
-Unit tests (no runtime tools required beyond bats):
+Unit tests source portconf and exercise real qatom parsing.  They require bats,
+eix, portage-utils, and gawk:
 
     make check                  # or: bats tests/unit/
 
@@ -74,6 +78,7 @@ against real Portage tooling.  The following must be on PATH:
 
     app-portage/eix
     app-portage/portage-utils   (qatom)
+    dev-lang/gawk
     dev-libs/tre                (agrep)
 
 Run with:
@@ -112,6 +117,7 @@ or modify real system state.
     PKGDB         installed-package db root    (default: /var/db/pkg)
     WORLD         path to the world file       (default: /var/lib/portage/world)
     DEP_PATH      eix dep-cache root           (default: /var/cache/edb/dep)
+    PORTCONF_CONF config-file path              (default: /etc/portconf.conf)
     PORTCONF_LOCK_FILE writer lock path         (default: BRDIR/.portconf.lock)
 
 These are primarily intended for the bats integration test harness to

@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # Integration tests for etc_restore() and world_restore() — the -r and -wr
 # handlers.  Both wrap the shared restore() helper which:
-#   1. Lists existing tarballs under arg1 (BRDIR or BRDIR/world).
+#   1. Lists only tarballs matching the requested prefix under arg1
+#      (BRDIR or BRDIR/world).
 #   2. Presents them via `select` (PS3 prompt).
 #   3. Validates every member, extracts into a same-filesystem staging dir,
 #      and swaps the completed target through the shared undo journal.
@@ -84,6 +85,28 @@ load 'test_helper'
 	# Both timestamps appear in the select listing.
 	[[ "${output}" == *'24.01.01-12:00'* ]]
 	[[ "${output}" == *'24.02.02-12:00'* ]]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: force mode ignores foreign bz2 files" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage"
+	printf 'OLD\n' > "${PORT_ETC}/state"
+	printf 'RESTORED\n' > "${TEST_ROOT}/staging/portage/state"
+	tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	printf 'foreign\n' > "${BRDIR}/zzz.bz2"
+	printf 'foreign\n' > "${BRDIR}/world_99.01.01-00:00.tar.bz2"
+	_set_action_mode force
+	run etc_restore </dev/null
+	[ "$status" -eq 0 ]
+	[[ "$(cat "${PORT_ETC}/state")" == "RESTORED" ]]
+	[[ "${output}" != *"zzz"* ]]
+	[[ "${output}" != *"world_"* ]]
 	rm -rf "${TEST_ROOT}"
 }
 
@@ -210,6 +233,44 @@ load 'test_helper'
 	[[ "${output}" == *'unsafe, unreadable, or corrupt'* ]]
 	[[ "$(cat "${PORT_ETC}/should_survive")" == 'KEEP' ]]
 	[ ! -e "${TEST_ROOT}/etc/portage-sibling" ]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: preserves a normal external make.profile symlink" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage"
+	ln -s ../../profiles/default "${TEST_ROOT}/staging/portage/make.profile"
+	tar -jcf "${BRDIR}/portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	run etc_restore <<< "1"
+	[ "$status" -eq 0 ]
+	[ -L "${PORT_ETC}/make.profile" ]
+	[[ "$(readlink "${PORT_ETC}/make.profile")" == "../../profiles/default" ]]
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: archive member cannot write through an archived symlink" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage" "${TEST_ROOT}/outside"
+	printf 'KEEP\n' > "${PORT_ETC}/state"
+	ln -s ../../outside "${TEST_ROOT}/staging/portage/escape"
+	printf 'ESCAPE\n' > "${TEST_ROOT}/payload"
+	tar -cf "${BRDIR}/portage_24.01.01-12:00.tar" -C "${TEST_ROOT}/staging" portage
+	tar --append --transform='s|^payload$|portage/escape/owned|' \
+		-f "${BRDIR}/portage_24.01.01-12:00.tar" -C "${TEST_ROOT}" payload
+	bzip2 "${BRDIR}/portage_24.01.01-12:00.tar"
+	run etc_restore <<< "1"
+	[ "$status" -eq 1 ]
+	[[ "$(cat "${PORT_ETC}/state")" == "KEEP" ]]
+	[ ! -e "${TEST_ROOT}/outside/owned" ]
 	rm -rf "${TEST_ROOT}"
 }
 
