@@ -50,6 +50,9 @@
 	* Environment cleanup distinguishes package.env configuration references
 	  from implicit package bashrc paths, and evaluates ownership across the
 	  complete package.env tree so one fragment cannot delete another's config.
+	* Redundant keyword pruning removes exact literal tokens, so `amd64` cannot
+	  erase `~amd64` and option- or wildcard-shaped keywords remain data rather
+	  than grep options, regular expressions, or shell globs.
 	* env.d is checked even when env is absent, each subtree has an independent
 	  removal list, and dotfile-only directories are no longer pruned as empty.
 	* Directory-to-file conversion inserts a missing newline only between
@@ -70,7 +73,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 487 automated tests pass: 291 unit, 119 integration, 54 smoke, and 23
+	* 489 automated tests pass: 293 unit, 119 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the

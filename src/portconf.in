@@ -1412,8 +1412,13 @@ sort_use_file(){
 
 # stupid_keywords: remove per-package keywords that already match the system ACCEPT_KEYWORDS or a wildcard parent entry.
 stupid_keywords(){
+	local -
+	# Keyword tokens may legitimately be glob-shaped (`-*`, `**`).  Keep them
+	# as data throughout the word-splitting loops rather than expanding them
+	# against names in the caller's working directory.
+	set -f
 	unset ACCEPT_KEYWORDS
-	local ACCEPT_KEYWORDS _redundant
+	local ACCEPT_KEYWORDS _redundant _string_pat _fixed_rep
 	ACCEPT_KEYWORDS="$(eix --print ACCEPT_KEYWORDS)"
 	for KEY in ${ACCEPT_KEYWORDS};do
 		while read satom lkeys;do
@@ -1445,7 +1450,7 @@ stupid_keywords(){
 					done
 					if [[ -n "${_redundant}" ]];then
 						printf '%b\n' "Twice defined keyword ${red}${key}${restore}:\t${green}${satom}${restore}"
-						out_keys="$(grep -v "$(printf '%s' "${key}")"  <<< "${out_keys}" || true)"
+						out_keys="$(grep -vxF -- "${key}" <<< "${out_keys}" || true)"
 					fi
 				done
 			fi
@@ -1454,17 +1459,20 @@ stupid_keywords(){
 			if [[ "${lkeys}" != "${out_keys}" ]];then
 				if [[ -n "${out_keys% }" ]];then
 					if [[ -n "${comment}" ]];then
-						string="$(grep "^${satom} ${lkeys} .*#${comment}$" "${1}" || true)"
+						string="$(grep -F -- "${satom} ${lkeys} " "${1}" | grep -F -- "#${comment}" | head -n1 || true)"
 						fixed_string="${satom} ${out_keys% } #${comment}"
 					else
-						string="$(grep "^${satom} ${lkeys}$" "${1}" || true)"
+						string="$(grep -Fx -- "${satom} ${lkeys}" "${1}" || true)"
 						fixed_string="${satom} ${out_keys}"
 					fi
 				else
-					string="$(grep "^${satom} ${lkeys}.*$" "${1}" || true)"
+					string="$(grep -F -- "${satom} ${lkeys}" "${1}" | head -n1 || true)"
 					fixed_string=""
 				fi
-				sed -e "s|^${string//\*/\\*}$|${fixed_string}|"  -e '/^$/d' -i "${2}" || true
+				[[ -n "${string}" ]] || continue
+				_string_pat="$(_sed_escape_pat "${string}")"
+				_fixed_rep="$(_sed_escape_rep "${fixed_string}")"
+				sed -e "s|^${_string_pat}$|${_fixed_rep}|" -e '/^$/d' -i "${2}" || true
 			fi
 		done < "${1}"
 	done

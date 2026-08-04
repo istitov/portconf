@@ -54,3 +54,19 @@ _run_sk() {  # $1 = system ACCEPT_KEYWORDS, rest = package.accept_keywords lines
 	run cat "${SK_OUT}"
 	assert_output 'cat-test/a ~x86'
 }
+
+@test "stupid_keywords: exact removal preserves a substring-sharing keyword" {
+	_run_sk "amd64" 'cat-test/a amd64 ~amd64'
+	run cat "${SK_OUT}"
+	assert_output 'cat-test/a ~amd64'
+}
+
+@test "stupid_keywords: option-leading and wildcard keywords are removed literally" {
+	_run_sk "-*" 'cat-test/a -* ~testarch'
+	run cat "${SK_OUT}"
+	assert_output 'cat-test/a ~testarch'
+
+	_run_sk "**" 'cat-test/a ** ~testarch'
+	run cat "${SK_OUT}"
+	assert_output 'cat-test/a ~testarch'
+}

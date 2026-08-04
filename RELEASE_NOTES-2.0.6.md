@@ -42,6 +42,8 @@ handling, and rewrite invariants substantially harder to violate.
 - Referenced environment configs are never mistaken for implicit package
   bashrc files, and references are resolved globally across directory
   fragments before an unused config can be removed.
+- Redundant keyword removal is literal and token-exact; substring-sharing,
+  option-leading, and wildcard-shaped sibling keywords are preserved.
 - Temp cleanup, backup rotation, eix-cache lifetime, qatom parsing, environment
   cleanup, mask/keyword decisions, overlay cleanup, and status accounting have
   all received additional correctness hardening.
@@ -51,7 +53,7 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 487 automated tests: 291 unit, 119 integration, 54 smoke,
+The release passes 489 automated tests: 293 unit, 119 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.
