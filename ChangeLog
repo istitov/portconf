@@ -326,10 +326,10 @@
 	  (anchored to exclude single-token comment lines) so the UI
 	  shape is unchanged.
 	* src/portconf.in (startup): gawk runtime probe.  Both sort_*
-	  rewrites use `asorti()` which is gawk-only; they invoke gawk directly
-	  instead of requiring a system-wide eselect awk change, and a missing
-	  dependency fails loudly at startup with an emerge hint rather than
-	  mid-mutation with an opaque error.
+	  rewrites use `asorti()` which is gawk-only; non-gawk awk
+	  installs (busybox, mawk, eselect-overridden) now fail loudly
+	  at script start with an `emerge dev-lang/gawk && eselect awk
+	  set gawk` hint, not mid-mutation with an opaque error.
 	* src/portconf.in (not_found): the first `eix -Ttc` was unguarded
 	  under set -e while its sibling already had `|| true`.  eix's test
 	  mode exits non-zero when it finds entries, so portconf -t/-f/-fr
