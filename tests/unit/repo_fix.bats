@@ -3,10 +3,10 @@
 #
 # repo_fix: for each overlay in PORTDIR_OVERLAY, if the overlay contains
 #   category directories not already listed in PORTDIR/profiles/categories,
-#   and the overlay has no profiles/categories of its own, create one and
-#   register it in tmp_categories for later cleanup.
+#   and the overlay has no profiles/categories of its own, create one in force
+#   mode or synthesize a symlink-backed scratch overlay in pretend mode.
 #
-# rm_repo_fix: remove all paths accumulated in tmp_categories.
+# rm_repo_fix: remove temporary paths and restore the original overlay list.
 #
 # Category directories are identified as entries matching *-* or "virtual".
 
@@ -81,6 +81,41 @@ teardown() {
 	run stat -c %Y "${TEST_OVERLAY}/profiles/categories"
 	assert_output "${mtime_before}"
 	[[ -z "${tmp_categories}" ]]
+}
+
+@test "repo_fix: pretend uses a scratch overlay view with equivalent categories" {
+	mkdir -p "${TEST_OVERLAY}/my-overlay"
+	PORTDIR_OVERLAY="${TEST_OVERLAY}"
+	local original="${PORTDIR_OVERLAY}" shadow
+	_set_action_mode pretend
+
+	repo_fix
+
+	[[ ! -e "${TEST_OVERLAY}/profiles/categories" ]]
+	[[ "${PORTDIR_OVERLAY}" != "${original}" ]]
+	shadow="${PORTDIR_OVERLAY}"
+	[[ -f "${shadow}/profiles/categories" ]]
+	grep -qxF 'my-overlay' "${shadow}/profiles/categories"
+	[[ -d "${shadow}/my-overlay" ]]
+	rm_repo_fix
+	[[ "${PORTDIR_OVERLAY}" == "${original}" ]]
+}
+
+@test "eix_check: pretend exposes scratch categories only during cache generation" {
+	mkdir -p "${TEST_OVERLAY}/my-overlay"
+	PORTDIR_OVERLAY="${TEST_OVERLAY}"
+	local original="${PORTDIR_OVERLAY}" captured
+	captured="$(mktemp)"
+	eix() { printf 'eix test\n'; }
+	eix-update() { cat "${PORTDIR_OVERLAY}/profiles/categories" > "${captured}"; }
+	_set_action_mode pretend
+
+	eix_check
+
+	grep -qxF 'my-overlay' "${captured}"
+	[[ ! -e "${TEST_OVERLAY}/profiles/categories" ]]
+	[[ "${PORTDIR_OVERLAY}" == "${original}" ]]
+	rm -f "${captured}"
 }
 
 # --- rm_repo_fix ---

@@ -53,10 +53,12 @@ handling, and rewrite invariants substantially harder to violate.
   `env.d` is processed independently from `env`. Restore inventory discovery
   no longer leaks shell glob options into later actions. Backup labels use the
   calendar year so lexical newest/oldest ordering remains correct in January.
+  Fresh-cache dry-runs synthesize missing overlay categories in scratch views,
+  giving eix force-equivalent input without writing into repository roots.
 
 ### Verification
 
-The release passes 493 automated tests: 295 unit, 121 integration, 54 smoke,
+The release passes 495 automated tests: 297 unit, 121 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.

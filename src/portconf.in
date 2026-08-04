@@ -634,31 +634,72 @@ _rotate_archives() {
 
 # repo_fix: merge declared overlays' categories into Portage's view for this run.
 repo_fix(){
-	# eix_check historically created profiles/categories inside overlay trees,
-	# even for --pretend.  A dry run may create disposable files under /tmp,
-	# but it must not touch any configured system/repository root.
-	_action_is pretend && return 0
+	local path local_categories portage_categoties shadow overlay_view=""
+	local entry child base
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
 		for path in ${PORTDIR_OVERLAY};do
 			local_categories="$(ls -d1 "${path}"/{*-*,virtual} 2>/dev/null | sed -e "s|${path}/||g" | sort -u || true)"
 			portage_categoties="$(cat "${PORTDIR}/profiles/categories" 2>/dev/null || true)"
 			if [[ -n "$(grep -vxF -f <(printf '%s\n' "${portage_categoties}") <<< "${local_categories}" || true)" ]];then
 				if [[ ! -f "${path}/profiles/categories" ]];then
+					if _action_is pretend;then
+						# Mirror the overlay through symlinks, replacing only its
+						# missing categories file.  eix therefore sees the same
+						# repository contents as force mode without a repository write.
+						shadow="$(_mktemp -d)" || return 1
+						mkdir -p "${shadow}/profiles" || return 1
+						while IFS= read -r -d '' entry;do
+							base="${entry##*/}"
+							if [[ "${base}" == "profiles" ]];then
+								while IFS= read -r -d '' child;do
+									[[ "${child##*/}" == "categories" ]] && continue
+									ln -s -- "$(readlink -f -- "${child}")" "${shadow}/profiles/${child##*/}" || return 1
+								done < <(find -H "${entry}" -mindepth 1 -maxdepth 1 -print0)
+							else
+								ln -s -- "$(readlink -f -- "${entry}")" "${shadow}/${base}" || return 1
+							fi
+						done < <(find "${path}" -mindepth 1 -maxdepth 1 -print0)
+						printf '%s\n' "${local_categories}" > "${shadow}/profiles/categories" || return 1
+						_repo_fix_shadows+=" ${shadow}"
+						overlay_view+=" ${shadow}"
+						printf '%b\n' "Using scratch 'categories': ${path}"
+						continue
+					fi
 					[[ ! -d "${path}/profiles" ]] && mkdir "${path}/profiles" && tmp_categories+=" ${path}/profiles"
 					printf '%b\n' "Creating temporary 'categories': ${path}"
-					echo "${local_categories}" >> "${path}/profiles/categories"
+					printf '%s\n' "${local_categories}" > "${path}/profiles/categories"
 					tmp_categories+=" ${path}/profiles/categories"
 				fi
 			fi
+			overlay_view+=" ${path}"
 		done
+		if _action_is pretend;then
+			_repo_fix_overlay_orig="${PORTDIR_OVERLAY}"
+			_repo_fix_overlay_saved=1
+			PORTDIR_OVERLAY="${overlay_view# }"
+			export PORTDIR_OVERLAY
+		fi
 	fi
 }
 # rm_repo_fix: undo repo_fix — remove the merged-in overlay categories.
 rm_repo_fix(){
+	local tmp_category
 	if [[ -n "${tmp_categories}" ]];then
 		for tmp_category in ${tmp_categories};do
-			rm -rf "${tmp_category}"
+			rm -rf -- "${tmp_category}"
 		done
+		tmp_categories=""
+	fi
+	if [[ -n "${_repo_fix_shadows:-}" ]];then
+		for tmp_category in ${_repo_fix_shadows};do
+			rm -rf -- "${tmp_category}"
+		done
+		_repo_fix_shadows=""
+	fi
+	if [[ -n "${_repo_fix_overlay_saved:-}" ]];then
+		PORTDIR_OVERLAY="${_repo_fix_overlay_orig}"
+		export PORTDIR_OVERLAY
+		unset _repo_fix_overlay_orig _repo_fix_overlay_saved
 	fi
 }
 # eix_check: build a fresh eix metadata cache in a temp file (-rc mode).
