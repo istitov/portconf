@@ -28,6 +28,8 @@ teardown() {
 	package_env
 	run grep -F 'nonexistent.conf' "${PORT_ETC}/package.env"
 	assert_failure
+	run grep -F 'sys-apps/grep' "${PORT_ETC}/package.env"
+	assert_failure
 }
 
 @test "package_env: present conf is preserved" {
@@ -63,11 +65,14 @@ teardown() {
 	# as a character class opener, gobbling up to the next `]` and
 	# producing garbage output.  Post-fix: the `[` is escaped before
 	# interpolation and the substitution is exact.
-	printf 'sys-apps/grep[static] nonexistent.conf\n' \
+	: > "${PORT_ETC}/env/keep.conf"
+	printf 'sys-apps/grep[static] keep.conf nonexistent.conf\n' \
 		> "${PORT_ETC}/package.env"
 	package_env
 	# The original atom should still be in the file (not corrupted).
 	run grep -F 'sys-apps/grep[static]' "${PORT_ETC}/package.env"
+	assert_success
+	run grep -F 'keep.conf' "${PORT_ETC}/package.env"
 	assert_success
 	# The missing conf should have been removed.
 	run grep -F 'nonexistent.conf' "${PORT_ETC}/package.env"
@@ -83,8 +88,10 @@ teardown() {
 	printf 'sys-apps/grep miss.conf # alt | option\n' \
 		> "${PORT_ETC}/package.env"
 	package_env
-	# The atom must still be there (substitution shouldn't have erased it).
+	# The invalid entry disappears, but its annotation remains useful.
 	run grep -F 'sys-apps/grep' "${PORT_ETC}/package.env"
+	assert_failure
+	run grep -Fx '# alt | option' "${PORT_ETC}/package.env"
 	assert_success
 }
 

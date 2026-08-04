@@ -1704,40 +1704,48 @@ package_env_conf(){
 # package_env: remove package.env conf references whose env/ file doesn't exist on disk.
 package_env(){
 	package_env_def(){
+		local tmp_file line xline atom all_confs conf comment missing
+		local -a kept_confs
 		tmp_file="$(_mktemp)"
-		cp "${file}" "${tmp_file}"
-		while IFS= read -r line;do
+		: > "${tmp_file}"
+		while IFS= read -r line || [[ -n "${line}" ]];do
+			xline="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line}")"
+			if [[ -z "${xline}" || "${xline}" == \#* ]];then
+				printf '%s\n' "${line}" >> "${tmp_file}"
+				continue
+			fi
+
+			comment=""
+			[[ "${line}" == *\#* ]] && comment="#${line#*#}"
 			xline="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${line%%#*}")"
-			atom="${xline%% *}"
-			all_confs="${xline#${atom} }"
+			atom="${xline%%[[:space:]]*}"
+			all_confs="${xline#"${atom}"}"
+			all_confs="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${all_confs}")"
+			kept_confs=()
+			missing=""
 			for conf in ${all_confs};do
-				# A conf that still exists on disk is fine -- leave the line
-				# alone.  This branch used to do `IGNORE+=$'\n'"${conf}"`,
-				# leaking the conf BASENAME into the GLOBAL IGNORE pattern that
-				# not_found / invalid_uses / env_not_installed all `grep -v`
-				# against later in the same run -- so a conf called `static` or
-				# `gcc` silently filtered out every atom or env path containing
-				# that substring.  package_env has no business mutating the
-				# user's IGNORE, so it no longer does.
-				[[ -f "${PORT_ETC}/env/${conf}" ]] && continue
+				# A conf that still exists on disk is fine.  Do not leak its
+				# basename into the global IGNORE pattern used by later passes.
+				if [[ -f "${PORT_ETC}/env/${conf}" ]];then
+					kept_confs+=("${conf}")
+					continue
+				fi
 				printf '%b\n' "Defined conf not exists: ${red}${conf}${restore}"
-				new_line=$(grep -v "^${conf}$" <<< "$(tr ' ' $'\n' <<< "${line}")" | tr $'\n' ' ' || true)
-				new_line="$(sed 's/^[ \t]*//;s/[ \t]*$//' <<< "${new_line}")"
-				# Escape sed metacharacters before interpolating user-
-				# controlled content from package.env into the s|||
-				# pattern.  Without this, lines containing `|`, `\`,
-				# `.`, `[`, `*`, `&` corrupt or silently break the
-				# in-place edit.  Atoms with USE-dep brackets like
-				# `sys-apps/grep[static]` are the most common trigger.
-				_p="${line//\\/\\\\}";     _p="${_p//|/\\|}"
-				_p="${_p//./\\.}";         _p="${_p//\[/\\[}"
-				_p="${_p//\*/\\*}"
-				_r="${new_line//\\/\\\\}"; _r="${_r//|/\\|}"
-				_r="${_r//&/\\&}"
-				sed "s|${_p}|${_r}|" -i "${tmp_file}"
-				unset _p _r
-				line="${new_line}"
+				missing=1
 			done
+
+			if [[ -z "${missing}" && -n "${all_confs}" ]];then
+				# Preserve byte-for-byte lines whose references are all valid.
+				printf '%s\n' "${line}" >> "${tmp_file}"
+			elif (( ${#kept_confs[@]} > 0 ));then
+				printf '%s' "${atom} ${kept_confs[*]}" >> "${tmp_file}"
+				[[ -n "${comment}" ]] && printf ' %s' "${comment}" >> "${tmp_file}"
+				printf '\n' >> "${tmp_file}"
+			elif [[ -n "${comment}" ]];then
+				# All references disappeared: drop the now-invalid atom but retain
+				# its human annotation as a standalone comment.
+				printf '%s\n' "${comment}" >> "${tmp_file}"
+			fi
 		done < "${file}"
 		diff_ask "${file}" "${tmp_file}"
 		eend $? 2>/dev/null
@@ -1755,7 +1763,9 @@ env_not_installed(){
 		# any sandbox / non-default ${PORT_ETC}.
 		files="$(find "${PORT_ETC}/${x}/" -mindepth 2 -maxdepth 2 -type f \! -name '*~' \! -name '*.bak' 2>/dev/null | rev | cut -d\/ -f1-2 | rev || true)"
 		[[ -n "${IGNORE}" ]] && files="$(grep -v "${IGNORE}" <<< "${files}" || true)"
-		dirs="$(find "${PORT_ETC}/${x}/" -type d 2>/dev/null || true)"
+		# Deepest-first lets one pass remove a newly emptied category and then
+		# its parent.  Parent-first left env/ behind until the next invocation.
+		dirs="$(find "${PORT_ETC}/${x}/" -depth -type d 2>/dev/null || true)"
 		[[ -n "${IGNORE}" ]] && dirs="$(grep -v "${IGNORE}" <<< "${dirs}" || true)"
 		[[ -n "${files}" || -n "${dirs}" ]] || break
 
@@ -3496,8 +3506,8 @@ for OPT in "${_run_opts[@]}";do
 		backup;
 		not_found;
 		package_env_conf;
-		package_env;
 		env_not_installed;
+		package_env;
 		empty_files;
 		backup_files;;
 	--stupid-mask | -sm )
@@ -3510,8 +3520,8 @@ for OPT in "${_run_opts[@]}";do
 		backup;
 		not_found;
 		package_env_conf;
-		package_env;
 		env_not_installed;
+		package_env;
 		force_not_installed;
 		empty_files;
 		backup_files;;
@@ -3526,8 +3536,8 @@ for OPT in "${_run_opts[@]}";do
 		sort_uniq_files;
 		not_found;
 		package_env_conf;
-		package_env;
 		env_not_installed;
+		package_env;
 		sort_use_file;
 		sort_uniq_mask_use;
 		invalid_uses;

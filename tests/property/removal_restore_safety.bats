@@ -59,6 +59,21 @@ teardown() {
 	done
 }
 
+@test "property: trash resolves stale package.env references in one pass" {
+	mkdir -p "${PROP_PORT_ETC}/env/cat-test"
+	printf 'synthetic env\n' > "${PROP_PORT_ETC}/env/cat-test/gone.conf"
+	printf 'sys-apps/grep cat-test/gone.conf\n' > "${PROP_PORT_ETC}/package.env"
+
+	prop_apply -t
+	[ "${status}" -eq 0 ]
+	[ ! -e "${PROP_PORT_ETC}/env/cat-test/gone.conf" ]
+	if [[ -e "${PROP_PORT_ETC}/package.env" ]];then
+		run grep -F 'cat-test/gone.conf' "${PROP_PORT_ETC}/package.env"
+		assert_failure
+	fi
+	assert_idempotent -t
+}
+
 _tree_fingerprint() {
 	local root="$1"
 	(

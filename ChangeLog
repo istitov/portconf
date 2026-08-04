@@ -39,6 +39,9 @@
 	* Dedicated property tests now exercise exact-removal sibling preservation
 	  across literal/metacharacter/slot/version families and prove that several
 	  rejected restore-archive shapes leave a live-tree fingerprint unchanged.
+	* Trash/full cleanup removes stale nested env targets before pruning their
+	  package.env references, and prunes every missing reference in one rewrite;
+	  the result is complete in one pass and idempotent on a real config copy.
 
 	Build:
 	* configure.ac and the man page identify this development snapshot as
