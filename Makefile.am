@@ -8,6 +8,7 @@ EXTRA_DIST = \
 	CONTRIBUTING.md \
 	COPYING \
 	README.md \
+	RELEASE_NOTES-2.0.6.md \
 	SECURITY.md \
 	portconf.conf \
 	tests/test_helper.bash \

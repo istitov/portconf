@@ -1,10 +1,10 @@
 2026-08-03  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
-	2.0.6_pre1 — development snapshot
+	2.0.6 — "Safety Net"
 
-	Post-2.0.5 audit hardening.  Builds from the development line now carry
-	a distinct pre-release identity rather than producing binaries and source
-	archives indistinguishable from the signed 2.0.5 release.
+	Post-2.0.5 audit hardening.  The release makes safe action selection,
+	transactional mutation, exact CLI handling, metadata-preserving rewrites,
+	and destructive-operation invariants explicit and regression-tested.
 
 	Safety:
 	* Dry-run is the authoritative default action policy; applying changes
@@ -44,9 +44,15 @@
 	  the result is complete in one pass and idempotent on a real config copy.
 
 	Build:
-	* configure.ac and the man page identify this development snapshot as
-	  2.0.6_pre1, so make dist emits portconf-2.0.6_pre1.tar.xz instead of
-	  colliding with the released portconf-2.0.5 archive.
+	* configure.ac and the man page identify the final 2.0.6 release; make dist
+	  emits portconf-2.0.6.tar.xz.
+
+	Validation:
+	* 463 automated tests pass: 281 unit, 107 integration, 53 smoke, and 22
+	  property tests, plus ShellCheck and make distcheck.
+	* Ten representative mutating modes pass clean-exit, no-invention,
+	  no-new-duplicate, and second-run idempotence checks against a copy of the
+	  maintainer's real /etc/portage tree.
 
 2026-06-10  Ivan S. Titov  <iohann.s.titov@gmail.com>
 
