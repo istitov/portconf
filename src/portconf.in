@@ -194,9 +194,9 @@ _txn_rollback() {
 }
 
 _txn_commit() {
+	[[ -n "${_txn_open}" ]] || return 0
 	local -a holders=("${_txn_holders[@]}")
 	local holder rc=0
-	[[ -n "${_txn_open}" ]] || return 0
 	# The new state is committed before old copies are garbage-collected.  A
 	# cleanup failure therefore leaves a recoverable holder, never a half-rollback.
 	_txn_open=""
