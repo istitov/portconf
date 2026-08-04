@@ -14,6 +14,10 @@ handling, and rewrite invariants substantially harder to violate.
   ordinary failure.
 - Applying invocations take an exclusive advisory lock. Concurrent dry-runs
   remain available.
+- After a hard kill, the next applying run removes stale disposable stages
+  under the writer lock when no recoverable holder is present. Recoverable
+  transaction holders are preserved and block mutation for manual inspection;
+  neither artifact type enters backups.
 - Ordinary rewrites preserve supported access metadata. File/directory
   conversions map POSIX mode and ownership without claiming cross-type ACL or
   xattr equivalence.
@@ -58,7 +62,7 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 495 automated tests: 297 unit, 121 integration, 54 smoke,
+The release passes 502 automated tests: 303 unit, 122 integration, 54 smoke,
 and 23 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.

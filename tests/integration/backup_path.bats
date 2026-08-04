@@ -54,6 +54,21 @@ teardown() {
 	[[ "${output}" == *'portage/package.use'* ]]
 }
 
+@test "backup: tarball excludes portconf staging and transaction artifacts" {
+	mkdir -p "${PORT_ETC}/package.mask/.entry.portconf-txn.A1b2C3"
+	printf 'partial rewrite\n' > "${PORT_ETC}/.make.conf.portconf-stage.D4e5F6"
+	printf 'saved original\n' > "${PORT_ETC}/package.mask/.entry.portconf-txn.A1b2C3/original"
+
+	backup
+
+	local tarball
+	tarball="$(ls "${BRDIR}/"*.tar.bz2)"
+	run tar -tjf "${tarball}"
+	assert_success
+	[[ "${output}" != *'.portconf-stage.'* ]]
+	[[ "${output}" != *'.portconf-txn.'* ]]
+}
+
 @test "backup: tarball does NOT include host /etc/make.conf when PORT_ETC overridden" {
 	# Critical safety property: a sandboxed PORT_ETC must never pull the
 	# host's legacy /etc/make.conf into a test tarball.  The legacy

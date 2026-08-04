@@ -41,6 +41,11 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
 else
 	green=""; red=""; restore=""; contrast=""; underline=""
 fi
+# Keep a stable process-start timestamp for distinguishing abandoned adjacent
+# artifacts from anything created by this invocation.  The writer lock is
+# acquired before the sweep, so older matches cannot belong to another
+# correctly configured applying process.
+_process_start_marker="$(mktemp 2>/dev/null)" || _process_start_marker=""
 # _tmpfile_list records every temp path handed out by _mktemp.  _mktemp is
 # almost always called as `f="$(_mktemp)"` -- a command-substitution subshell --
 # so an array append (_tmpfiles+=) mutated only the subshell's private copy; the
@@ -212,17 +217,19 @@ _txn_commit() {
 # _cleanup: remove every temp file registered via _mktemp; runs from the EXIT trap.
 _cleanup() {
 	[[ -z "${_txn_open:-}" ]] || _txn_rollback || true
-	[[ -n "${_tmpfile_list}" && -f "${_tmpfile_list}" ]] || return 0
 	local f
-	while IFS= read -r f;do
-		[[ -n "${f}" ]] || continue
-		if [[ -d "${f}" && ! -L "${f}" ]];then
-			rm -rf -- "${f}"
-		else
-			rm -f -- "${f}"
-		fi
-	done < "${_tmpfile_list}"
-	rm -f -- "${_tmpfile_list}"
+	if [[ -n "${_tmpfile_list}" && -f "${_tmpfile_list}" ]];then
+		while IFS= read -r f;do
+			[[ -n "${f}" ]] || continue
+			if [[ -d "${f}" && ! -L "${f}" ]];then
+				rm -rf -- "${f}"
+			else
+				rm -f -- "${f}"
+			fi
+		done < "${_tmpfile_list}"
+		rm -f -- "${_tmpfile_list}"
+	fi
+	[[ -z "${_process_start_marker:-}" ]] || rm -f -- "${_process_start_marker}"
 	return 0
 }
 trap _cleanup EXIT
@@ -250,6 +257,62 @@ _mktemp_near() {
 	fi
 	[[ -n "${_tmpfile_list}" ]] && printf '%s\n' "${f}" >> "${_tmpfile_list}"
 	printf '%s\n' "${f}"
+}
+
+# Remove adjacent temp artifacts left by an untrappable hard kill.  Run only
+# while holding the writer lock and only for artifacts older than this process.
+# Stages and empty holders contain no original user data and are disposable.
+# A non-empty transaction holder can contain the sole saved original, so keep
+# every artifact in place and stop the applying run for manual recovery rather
+# than guessing whether the interrupted transaction had reached commit.
+_sweep_abandoned_artifacts() {
+	local inventory artifact base sweep_root unresolved=""
+	local -a artifacts=()
+	[[ -n "${_write_lock_fd:-}" ]] || {
+		printf '%s\n' "portconf: refusing abandoned-artifact sweep without the writer lock" >&2
+		return 1
+	}
+	[[ -n "${_process_start_marker:-}" && -f "${_process_start_marker}" ]] || {
+		printf '%s\n' "portconf: process-start marker unavailable; abandoned artifacts not touched" >&2
+		return 1
+	}
+	sweep_root="$(readlink -m -- "${PORT_ETC}")" || return 1
+	[[ "${sweep_root}" != "/" ]] || {
+		printf '%s\n' "portconf: refusing abandoned-artifact sweep at filesystem root" >&2
+		return 1
+	}
+	[[ -d "${sweep_root}" ]] || return 0
+	inventory="$(_mktemp)" || return 1
+	find "${sweep_root}" -xdev -depth \
+		\( -name '.*.portconf-stage.??????' -o -name '.*.portconf-txn.??????' \) \
+		! -newer "${_process_start_marker}" -print0 > "${inventory}" || return 1
+	mapfile -d '' -t artifacts < "${inventory}"
+
+	# Detect recoverable journals before deleting a related stage.  Preserving
+	# the complete interrupted state is more important than automatic cleanup.
+	for artifact in "${artifacts[@]}";do
+		base="${artifact##*/}"
+		[[ "${base}" == *.portconf-txn.* ]] || continue
+		if [[ ! -d "${artifact}" || -L "${artifact}" ]] ||
+			[[ -n "$(find "${artifact}" -mindepth 1 -print -quit 2>/dev/null)" ]];then
+			printf '%s\n' \
+				"portconf: recoverable abandoned transaction holder: ${artifact}" \
+				"          inspect its original/replacement contents before removing it" >&2
+			unresolved=1
+		fi
+	done
+	[[ -z "${unresolved}" ]] || return 1
+
+	for artifact in "${artifacts[@]}";do
+		base="${artifact##*/}"
+		if [[ "${base}" == *.portconf-txn.* ]];then
+			rmdir -- "${artifact}" || return 1
+		elif [[ -d "${artifact}" && ! -L "${artifact}" ]];then
+			rm -rf -- "${artifact}" || return 1
+		else
+			rm -f -- "${artifact}" || return 1
+		fi
+	done
 }
 
 # Install rewritten file CONTENT at TARGET without replacing TARGET's access
@@ -767,6 +830,12 @@ eix_method(){
 backup(){
 	local port_parent port_name legacy_makeconf="" etc_update portconf_update
 	local name draft
+	local -a artifact_excludes=(
+		'--exclude=.*.portconf-stage.??????'
+		'--exclude=*/.*.portconf-stage.??????'
+		'--exclude=.*.portconf-txn.??????'
+		'--exclude=*/.*.portconf-txn.??????'
+	)
 	if _action_is pretend;then
 		printf '%b\n' "${PORT_ETC} backup: ${contrast}dry-run${restore}, no archive written"
 		return 0
@@ -801,13 +870,13 @@ backup(){
 		name="${BRDIR}/portage_$(date +%y.%m.%d-%H:%M:%S).tar.bz2"
 		draft="$(_mktemp_near "${name}")"
 		if [[ -n "${legacy_makeconf}" ]];then
-			tar -jcf "${draft}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}" || {
+			tar -jcf "${draft}" "${artifact_excludes[@]}" -C "${port_parent}/" "${port_name}" "${legacy_makeconf##*/}" || {
 				rm -f -- "${draft}"
 				printf '%b\n' "${red}Backup creation failed${restore}; existing snapshots retained"
 				return 1
 			}
 		else
-			tar -jcf "${draft}" -C "${port_parent}/" "${port_name}" || {
+			tar -jcf "${draft}" "${artifact_excludes[@]}" -C "${port_parent}/" "${port_name}" || {
 				rm -f -- "${draft}"
 				printf '%b\n' "${red}Backup creation failed${restore}; existing snapshots retained"
 				return 1
@@ -3687,6 +3756,7 @@ done
 # touch shared state.  Pretend mode remains side-effect-free and lock-free.
 if ! _action_is pretend && _needs_write_lock "${_dispatch_opts[@]}";then
 	_acquire_write_lock || exit 1
+	_sweep_abandoned_artifacts || exit 1
 fi
 # Save the dispatch-entry stdin on fd 9.  diff_ask / remove_ask read
 # Yes/No answers from fd 9 because most callers wrap them inside

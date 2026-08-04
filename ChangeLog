@@ -13,6 +13,10 @@
 	* Destructive multi-step operations use same-filesystem staging and an
 	  undo journal, restoring the original state on ordinary failures.
 	* Applying processes are serialized with an exclusive advisory lock.
+	* Applying startup removes stale hard-kill stages only under that lock and
+	  only when no recoverable holder is present.  Non-empty abandoned
+	  transaction holders remain intact and block mutation for manual recovery;
+	  neither artifact class enters backup archives.
 	* Rewrites preserve access metadata; file/directory conversions map the
 	  existing mode and ownership onto the new representation.
 	* --ask repository cleanup now aborts on EOF, positively confirms the
@@ -83,7 +87,7 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 495 automated tests pass: 297 unit, 121 integration, 54 smoke, and 23
+	* 502 automated tests pass: 303 unit, 122 integration, 54 smoke, and 23
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
 	  no-new-duplicate, and second-run idempotence checks against a copy of the
