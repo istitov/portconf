@@ -269,6 +269,7 @@ _sweep_abandoned_artifacts() {
 	local inventory artifact base sweep_root unresolved=""
 	local -a artifacts=()
 	local -a sweep_roots=()
+	local -a overlay_roots=()
 	local -A seen_roots=()
 	local root
 	[[ -n "${_write_lock_fd:-}" ]] || {
@@ -282,13 +283,13 @@ _sweep_abandoned_artifacts() {
 	# Staging can happen beside every mutation target, not just ${PORT_ETC}.
 	sweep_roots=(
 		"${PORT_ETC}"
-		"${PORT_ETC%/*}"
 		"${WORLD%/*}"
 		"${DEP_PATH%/*}"
 		"${BRDIR}"
 	)
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
-		sweep_roots+=( ${PORTDIR_OVERLAY} )
+		read -r -a overlay_roots <<< "${PORTDIR_OVERLAY}"
+		sweep_roots+=( "${overlay_roots[@]}" )
 	fi
 	if [[ -n "${makefile}" ]];then
 		sweep_roots+=( "${makefile%/*}" )
@@ -298,14 +299,18 @@ _sweep_abandoned_artifacts() {
 	for root in "${sweep_roots[@]}";do
 		sweep_root="$(readlink -m -- "${root}" 2>/dev/null || true)"
 		[[ -n "${sweep_root}" ]] || continue
-		[[ "${sweep_root}" != "/" ]] || continue
+		if [[ "${sweep_root}" == "/" ]];then
+			printf '%s\n' "portconf: refusing abandoned-artifact sweep at filesystem root" >&2
+			rm -f -- "${inventory}" || true
+			return 1
+		fi
 		[[ -d "${sweep_root}" ]] || continue
 		[[ -n "${seen_roots[${sweep_root}]:-}" ]] && continue
 		seen_roots["${sweep_root}"]=1
 
 		find "${sweep_root}" -xdev -depth \
 			\( -name '.*.portconf-stage.??????' -o -name '.*.portconf-txn.??????' \) \
-			! -newer "${_process_start_marker}" -print0 >> "${inventory}" || return 1
+			! -newer "${_process_start_marker}" -print0 >> "${inventory}" 2>/dev/null || true
 	done
 	[[ -s "${inventory}" ]] || {
 		rm -f -- "${inventory}" || true
@@ -499,6 +504,7 @@ _changes_seen=""
 _changes_found=0
 _changes_applied=0
 _changes_blocked=""
+_changes_failed=0
 eix_cache=""
 _write_lock_fd=""
 _write_lock_path=""
@@ -1160,6 +1166,7 @@ diff_ask(){
 						return 0
 					fi
 					_changes_blocked="write"
+					_changes_failed=1
 					printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 					rm "${2}" 2>/dev/null
 					return 1;;
@@ -1175,6 +1182,7 @@ diff_ask(){
 			# terminal and no answer was given.  Do NOT silently discard the
 			# pending change (the old behaviour looked like a clean no-op).
 			_changes_blocked="input"
+			_changes_failed=1
 			printf '%b\n' "\n${red}No answer read${restore} (stdin not an interactive terminal); nothing applied. Re-run with ${green}--force${restore} to apply non-interactively."
 			rm "${2}" 2>/dev/null
 			return 1
@@ -1185,6 +1193,7 @@ diff_ask(){
 				return 0
 			fi
 			_changes_blocked="write"
+			_changes_failed=1
 			printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 			rm "${2}" 2>/dev/null
 			return 1
@@ -1213,6 +1222,7 @@ remove_ask(){
 		while true;do
 			if ! read -r -u "${_ans_fd}" x;then
 				_changes_blocked="input"
+				_changes_failed=1
 				printf '%b\n' "\n${red}No answer read${restore}; nothing removed"
 				return 1
 			fi
@@ -1224,6 +1234,7 @@ remove_ask(){
 						return 0
 					fi
 					_changes_blocked="write"
+					_changes_failed=1
 					printf '%b\n' "${red}Could not remove${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 					eend 1 2>/dev/null
 					return 1;;
@@ -1256,6 +1267,7 @@ remove_ask(){
 # answer stream), and is exit-code transparent (captures and re-returns $?).
 _status_pc(){
 	local _rc=$?
+	(( _changes_failed )) && _rc=1
 	[[ -n "${_changes_seen}" ]] || return ${_rc}
 	local pending=$(( _changes_found - _changes_applied ))
 	if _action_is pretend;then
@@ -2033,7 +2045,7 @@ package_env(){
 # env_not_installed: remove env/<cat>/<pn> files whose target package is not installed.
 env_not_installed(){
 	local x files dirs file category pn pv pr slot full_ver slot_found
-	local _sf _s target conf parse_file parse_ok is_referenced
+	local _sf _s target conf parse_file parse_ok
 	local -a remove_targets=()
 	local -A referenced_env=()
 	while IFS= read -r conf;do
@@ -2058,12 +2070,10 @@ env_not_installed(){
 
 		while read -r file;do
 			[[ -z "${file}" ]] && continue
-			is_referenced=""
 			# package.env references take precedence over the implicit bashrc
 			# filename convention.  In particular, cat/pkg.conf is a common
 			# referenced config path, not evidence for a package named pkg.conf.
 			if [[ "${x}" == "env" && -n "${referenced_env["${file}"]:-}" ]];then
-				is_referenced=1
 				continue
 			fi
 			parse_file="${file}"
@@ -3181,7 +3191,7 @@ regen_world(){
 	done
 	# Install the fully-built depclean draft while the original remains in the
 	# open undo journal.  emerge -pc/-Own can now operate normally against it.
-	if ! _install_rewrite "${tmp_world}" "${WORLD}";then
+	if ! _install_rewrite "${WORLD}" "${tmp_world}";then
 		_txn_rollback || true
 		printf '%b\n' "${red}Could not stage regenerated world${restore}; ${WORLD} restored"
 		return 1
@@ -3793,6 +3803,7 @@ elif [[ -n "${_mode_f}" ]];then
 else
 	_set_action_mode pretend
 fi
+_changes_failed=0
 # Build the dispatch array from exact tokens.  Regex-stripping `--force`
 # would also strip the prefix from `--force-trash`, turning it into the
 # unknown option `-trash`.
