@@ -92,11 +92,15 @@
 	  and aligned with the implemented path and metadata contracts.
 
 	Validation:
-	* 509 automated tests pass: 305 unit, 127 integration, 54 smoke, and 23
+	* 511 automated tests pass: 305 unit, 127 integration, 54 smoke, and 25
 	  property tests, plus ShellCheck and make distcheck.
 	* Ten representative mutating modes pass clean-exit, no-invention,
-	  no-new-duplicate, and second-run idempotence checks against a copy of the
-	  maintainer's real /etc/portage tree.
+	  no-new-duplicate, second-run idempotence, and file-inventory preservation
+	  checks against a copy of the maintainer's real /etc/portage tree.  The
+	  inventory invariant is the one the other four cannot express: deleting a
+	  whole class of files satisfies all of them, so the property tier now
+	  asserts that no mutating mode makes a file disappear from a tree in which
+	  nothing is removable by contract.
 
 2026-06-10  Ivan S. Titov  <iohann.s.titov@gmail.com>
 

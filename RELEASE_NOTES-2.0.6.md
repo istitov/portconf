@@ -62,15 +62,25 @@ handling, and rewrite invariants substantially harder to violate.
 
 ### Verification
 
-The release passes 509 automated tests: 305 unit, 127 integration, 54 smoke,
-and 23 property tests. The property tier now directly checks that exact
+The release passes 511 automated tests: 305 unit, 127 integration, 54 smoke,
+and 25 property tests. The property tier now directly checks that exact
 removal never changes a sibling, referenced environment inventories survive
 trash cleanup, and rejected restore archives leave the live tree unchanged.
 
 Ten representative mutating modes (`-us`, `-s`, `-ku`, `-ko`, `-c`, `-ac`,
 `-ui`, `-uf`, `-t`, and `-f`) were also applied twice to isolated copies of a
 real `/etc/portage` tree. Every mode passed clean-exit, no-invention,
-no-new-duplicate, and idempotence checks.
+no-new-duplicate, idempotence, and file-inventory preservation checks.
+
+That last invariant is deliberate. Clean exit, no invented entries, no new
+duplicates and idempotence are all satisfied by deleting an entire class of
+files, so on their own they cannot detect the worst failure this release fixes.
+On the real-config copies every file that disappeared was one the mode is
+contracted to remove — an editor backup file, and a package.unmask fragment
+whose entries had all become stale — and no environment config or package.env
+fragment was lost. The property tier pins this down without relying on the
+shape of one tree: over a fixture in which nothing is removable by contract,
+no mutating mode may make a file disappear.
 
 See the [ChangeLog](https://github.com/istitov/portconf/blob/master/ChangeLog)
 for the full per-fix breakdown.

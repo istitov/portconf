@@ -11,8 +11,8 @@ Currently maintained by [istitov](https://github.com/istitov/portconf).
 Version 2.0.0 marked the first release of the maintained fork: a thorough
 modernisation of the inherited script with an autotools build system,
 env-overridable system paths for sandboxing, and 15 latent bugs fixed.  The
-current tree is protected by a 509-test suite across four tiers (305 unit / 127
-integration / 54 smoke / 23 property).
+current tree is protected by a 511-test suite across four tiers (305 unit / 127
+integration / 54 smoke / 25 property).
 See [`ChangeLog`](ChangeLog) for the full breakdown.
 
 The 2.0.0 modernization was carried out with heavy use of the Claude
