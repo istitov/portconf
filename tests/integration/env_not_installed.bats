@@ -169,3 +169,26 @@ _install() {
 	env_not_installed
 	[[ -f "${PORT_ETC}/env.d/.keep" ]]
 }
+
+@test "env_not_installed: keeps unreferenced env conf with .conf suffix when package is installed" {
+	: > "${PORT_ETC}/env/cat-test/keeper.conf"
+	_install "cat-test/keeper-1.0"
+
+	env_not_installed
+
+	[[ -e "${PORT_ETC}/env/cat-test/keeper.conf" ]]
+}
+
+@test "env_not_installed: leaves unparseable unreferenced names untouched" {
+	: > "${PORT_ETC}/env/cat-test/broken"
+	qatom() {
+		if [[ "${3:-}" == "cat-test/broken" ]]; then
+			return 0
+		fi
+		command qatom "$@"
+	}
+	env_not_installed
+	unset -f qatom
+
+	[[ -e "${PORT_ETC}/env/cat-test/broken" ]]
+}

@@ -1990,7 +1990,7 @@ package_env(){
 # env_not_installed: remove env/<cat>/<pn> files whose target package is not installed.
 env_not_installed(){
 	local x files dirs file category pn pv pr slot full_ver slot_found
-	local _sf _s target conf
+	local _sf _s target conf parse_file parse_ok is_referenced
 	local -a remove_targets=()
 	local -A referenced_env=()
 	while IFS= read -r conf;do
@@ -2015,19 +2015,30 @@ env_not_installed(){
 
 		while read -r file;do
 			[[ -z "${file}" ]] && continue
+			is_referenced=""
 			# package.env references take precedence over the implicit bashrc
 			# filename convention.  In particular, cat/pkg.conf is a common
 			# referenced config path, not evidence for a package named pkg.conf.
 			if [[ "${x}" == "env" && -n "${referenced_env["${file}"]:-}" ]];then
+				is_referenced=1
 				continue
 			fi
+			parse_file="${file}"
+			if [[ "${x}" == "env" ]];then
+				# Strip known config suffixes before atom parsing so bashrc-style
+				# names do not fabricate nonexistent package atoms.
+				parse_file="${parse_file%.conf}"
+				parse_file="${parse_file%.env}"
+			fi
+			parse_ok=0
 			# Reparse the file name with qatom -F (pipe-separated, non-whitespace
 			# IFS) -- the same idiom as package_envs.  The default whitespace qatom
 			# output collapses the empty PR column, so a `<cat>/<pn>:slot` name's
 			# slot slid into the rev field WITHOUT a colon and the slot branch
-			# below never ran; "<unset>" (not "(null)") is modern qatom's
+			# below never ran; `<unset>` (not `(null)`) is modern qatom's
 			# missing-PV placeholder.
 			while IFS='|' read -r category pn pv pr slot;do
+				parse_ok=1
 				[[ -z "${category}" || "${category}" == "(null)" ]] && continue
 				[[ -z "${pn}" || "${pn}" == "(null)" ]] && continue
 				[[ "${pv}" == "<unset>" ]] && pv=""
@@ -2040,14 +2051,14 @@ env_not_installed(){
 				if [[ -z "${pv}" && -z "${slot}" ]];then
 					# No version, no slot: any installed version satisfies it.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}"-[0-9]* &>/dev/null;then
-						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}${restore}"
+						printf '%b\n' "${red}Unreferenced${restore} ${green}${file}${restore}"
 						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
 				elif [[ -n "${pv}" && -z "${slot}" ]];then
 					# Pinned version must be installed.
 					if ! ls -d1 "${PKGDB}/${category}/${pn}-${full_ver}" &>/dev/null;then
-						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}-${full_ver}${restore}"
+						printf '%b\n' "${red}Unreferenced${restore} ${green}${file}${restore}"
 						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
@@ -2060,15 +2071,19 @@ env_not_installed(){
 						[[ -f "${_sf}" ]] || continue
 						_s="$(< "${_sf}")"
 						if [[ "${_s%%/*}" == "${slot}" ]];then slot_found=1; break;fi
+						unset _s
 					done
 					if [[ -z "${slot_found}" ]];then
-						printf '%b\n' "${red}Not installed${restore} ${green}${category}/${pn}:${slot}${restore}"
+						printf '%b\n' "${red}Unreferenced${restore} ${green}${file}${restore}"
 						remove_targets+=("${PORT_ETC}/${x}/${file}")
 						eend $? 2>/dev/null
 					fi
 				fi
-			done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]' "${file}" 2>/dev/null || true)"
-		done <<< "${files}"
+			done <<< "$(qatom -F '%{CATEGORY}|%{PN}|%{PV}|%[PR]|%[SLOT]' "${parse_file}" 2>/dev/null || true)"
+			if (( parse_ok == 0 ));then
+				printf '%b\n' "${red}Unreferenced${restore} ${green}${file}${restore} (unparseable)"
+			fi
+			done <<< "${files}"
 
 		# Keep each subtree's removals in an array so env entries are neither
 		# collapsed into one path nor replayed while env.d is processed.
