@@ -268,6 +268,9 @@ _mktemp_near() {
 _sweep_abandoned_artifacts() {
 	local inventory artifact base sweep_root unresolved=""
 	local -a artifacts=()
+	local -a sweep_roots=()
+	local -A seen_roots=()
+	local root
 	[[ -n "${_write_lock_fd:-}" ]] || {
 		printf '%s\n' "portconf: refusing abandoned-artifact sweep without the writer lock" >&2
 		return 1
@@ -276,16 +279,38 @@ _sweep_abandoned_artifacts() {
 		printf '%s\n' "portconf: process-start marker unavailable; abandoned artifacts not touched" >&2
 		return 1
 	}
-	sweep_root="$(readlink -m -- "${PORT_ETC}")" || return 1
-	[[ "${sweep_root}" != "/" ]] || {
-		printf '%s\n' "portconf: refusing abandoned-artifact sweep at filesystem root" >&2
-		return 1
-	}
-	[[ -d "${sweep_root}" ]] || return 0
+	# Staging can happen beside every mutation target, not just ${PORT_ETC}.
+	sweep_roots=(
+		"${PORT_ETC}"
+		"${PORT_ETC%/*}"
+		"${WORLD%/*}"
+		"${DEP_PATH%/*}"
+		"${BRDIR}"
+	)
+	if [[ -n "${PORTDIR_OVERLAY}" ]];then
+		sweep_roots+=( ${PORTDIR_OVERLAY} )
+	fi
+	if [[ -n "${makefile}" ]];then
+		sweep_roots+=( "${makefile%/*}" )
+	fi
+	[[ -z "${sweep_roots[*]}" ]] && return 0
 	inventory="$(_mktemp)" || return 1
-	find "${sweep_root}" -xdev -depth \
-		\( -name '.*.portconf-stage.??????' -o -name '.*.portconf-txn.??????' \) \
-		! -newer "${_process_start_marker}" -print0 > "${inventory}" || return 1
+	for root in "${sweep_roots[@]}";do
+		sweep_root="$(readlink -m -- "${root}" 2>/dev/null || true)"
+		[[ -n "${sweep_root}" ]] || continue
+		[[ "${sweep_root}" != "/" ]] || continue
+		[[ -d "${sweep_root}" ]] || continue
+		[[ -n "${seen_roots[${sweep_root}]:-}" ]] && continue
+		seen_roots["${sweep_root}"]=1
+
+		find "${sweep_root}" -xdev -depth \
+			\( -name '.*.portconf-stage.??????' -o -name '.*.portconf-txn.??????' \) \
+			! -newer "${_process_start_marker}" -print0 >> "${inventory}" || return 1
+	done
+	[[ -s "${inventory}" ]] || {
+		rm -f -- "${inventory}" || true
+		return 0
+	}
 	mapfile -d '' -t artifacts < "${inventory}"
 
 	# Detect recoverable journals before deleting a related stage.  Preserving
@@ -468,10 +493,12 @@ ACTION_MODE=""
 # Mutation tallies for the end-of-run status line (_status_pc, printed after
 # the dispatch loop): _changes_seen marks that a mutating op ran at all,
 # _changes_found counts files with a pending diff, _changes_applied the ones
-# actually written.  diff_ask maintains all three.
+# actually written.  diff_ask and remove_ask maintain all three and can
+# additionally stamp _changes_blocked when an operation aborts.
 _changes_seen=""
 _changes_found=0
 _changes_applied=0
+_changes_blocked=""
 eix_cache=""
 _write_lock_fd=""
 _write_lock_path=""
@@ -1073,6 +1100,7 @@ world_restore(){
 diff_ask(){
 	full_diff=""
 	_changes_seen=1
+	_changes_blocked=""
 	# Match only diff(1) NORMAL-format hunk headers (`3c3`, `2,4d1`, `0a5,7`):
 	# anchored to a whole line of `<range><acd><range>`.  The old unanchored
 	# `[[:digit:]][a-z][[:digit:]]` also caught CONTENT lines (which diff prefixes
@@ -1122,18 +1150,19 @@ diff_ask(){
 			while read -u "${_ans_fd}" x;do
 				case ${x} in
 					Yes | YES | yes | Y | y | "" )
-						# Apply if the target is writable; report clearly if
-						# not.  The old code refused every non-root user here
-						# ("go away" + exit 1) while the -y path did an
-						# unchecked mv -- the two now agree by just trying it.
-						if _install_rewrite "${1}" "${2}" 2>/dev/null;then
-							_changes_applied=$(( _changes_applied + 1 ))
-							unset full_diff
-							return 0
-						fi
-						printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
-						rm "${2}" 2>/dev/null
-						return 1;;
+					# Apply if the target is writable; report clearly if
+					# not.  The old code refused every non-root user here
+					# ("go away" + exit 1) while the -y path did an
+					# unchecked mv -- the two now agree by just trying it.
+					if _install_rewrite "${1}" "${2}" 2>/dev/null;then
+						_changes_applied=$(( _changes_applied + 1 ))
+						unset full_diff
+						return 0
+					fi
+					_changes_blocked="write"
+					printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
+					rm "${2}" 2>/dev/null
+					return 1;;
 					No | NO | no | N | n )
 						unset full_diff
 						rm "${2}" 2>/dev/null
@@ -1145,6 +1174,7 @@ diff_ask(){
 			# read returned non-zero = EOF: stdin was not an interactive
 			# terminal and no answer was given.  Do NOT silently discard the
 			# pending change (the old behaviour looked like a clean no-op).
+			_changes_blocked="input"
 			printf '%b\n' "\n${red}No answer read${restore} (stdin not an interactive terminal); nothing applied. Re-run with ${green}--force${restore} to apply non-interactively."
 			rm "${2}" 2>/dev/null
 			return 1
@@ -1154,6 +1184,7 @@ diff_ask(){
 				unset full_diff
 				return 0
 			fi
+			_changes_blocked="write"
 			printf '%b\n' "${red}Could not write${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 			rm "${2}" 2>/dev/null
 			return 1
@@ -1173,6 +1204,7 @@ remove_ask(){
 	# a successful rm a change applied -- without this a removal-only run (e.g.
 	# empty_files / not_found) ended with no end-of-run summary.
 	_changes_seen=1
+	_changes_blocked=""
 	_changes_found=$(( _changes_found + 1 ))
 	if _action_is ask;then
 		printf '%b' "${contrast}Remove${restore} ${green}${1}${restore}${contrast}?${restore} [${green}Yes${restore}/${red}No${restore}] "
@@ -1180,6 +1212,7 @@ remove_ask(){
 		{ : <&9; } 2>/dev/null || _ans_fd=0
 		while true;do
 			if ! read -r -u "${_ans_fd}" x;then
+				_changes_blocked="input"
 				printf '%b\n' "\n${red}No answer read${restore}; nothing removed"
 				return 1
 			fi
@@ -1190,6 +1223,8 @@ remove_ask(){
 						eend 0 2>/dev/null
 						return 0
 					fi
+					_changes_blocked="write"
+					printf '%b\n' "${red}Could not remove${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 					eend 1 2>/dev/null
 					return 1;;
 				No | NO | no | N | n )
@@ -1206,6 +1241,8 @@ remove_ask(){
 			eend 0 2>/dev/null
 			return 0
 		fi
+		_changes_blocked="write"
+		printf '%b\n' "${red}Could not remove${restore} ${1} (need root? re-run with ${green}doas${restore}/${green}sudo${restore})"
 		eend 1 2>/dev/null
 		return 1
 	elif _action_is pretend;then
@@ -1213,12 +1250,10 @@ remove_ask(){
 	fi
 }
 # _status_pc: end-of-run status line so a mutating invocation is never silent.
-# Reads the tallies diff_ask kept and speaks only when a mutating op actually
-# ran (_changes_seen).  Purely additive: it runs after the dispatch loop, never
-# gates control flow (so it can't break a prompt or a piped-in answer stream),
-# and is exit-code transparent (captures and re-returns $?).  The abort paths
-# (no answer read / cannot write) print their own specific message before
-# exiting under set -e, so they never reach -- and don't need -- this summary.
+# Reads the tallies diff_ask/remove_ask kept and speaks only when a mutating op
+# actually ran (_changes_seen).  Purely additive: it runs after the dispatch
+# loop, never gates control flow (so it can't break a prompt or a piped-in
+# answer stream), and is exit-code transparent (captures and re-returns $?).
 _status_pc(){
 	local _rc=$?
 	[[ -n "${_changes_seen}" ]] || return ${_rc}
@@ -1232,9 +1267,17 @@ _status_pc(){
 	elif (( _changes_applied > 0 && pending == 0 ));then
 		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s)"
 	elif (( _changes_applied > 0 ));then
-		printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending (re-run with --ask or --force)"
+		if [[ -n "${_changes_blocked}" ]];then
+			printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending"
+		else
+			printf '%b\n' "${contrast}portconf:${restore} updated ${_changes_applied} file(s), ${pending} still pending (re-run with --ask or --force)"
+		fi
 	elif (( pending > 0 ));then
-		printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (re-run with --ask or --force)"
+		case "${_changes_blocked}" in
+			write) printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (write failed)" ;;
+			input) printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (input not available)" ;;
+			*)     printf '%b\n' "${contrast}portconf:${restore} ${pending} file(s) have pending changes, none applied (re-run with --ask or --force)" ;;
+		esac
 	else
 		printf '%b\n' "${contrast}portconf:${restore} no changes needed"
 	fi
@@ -3138,7 +3181,11 @@ regen_world(){
 	done
 	# Install the fully-built depclean draft while the original remains in the
 	# open undo journal.  emerge -pc/-Own can now operate normally against it.
-	mv -- "${tmp_world}" "${WORLD}"
+	if ! _install_rewrite "${tmp_world}" "${WORLD}";then
+		_txn_rollback || true
+		printf '%b\n' "${red}Could not stage regenerated world${restore}; ${WORLD} restored"
+		return 1
+	fi
 
 	PS3="$(printf '%b\n' "${contrast}Choose package which you want save:${restore} ")"
 	choose_target(){
