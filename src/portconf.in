@@ -281,10 +281,16 @@ _sweep_abandoned_artifacts() {
 		return 1
 	}
 	# Staging can happen beside every mutation target, not just ${PORT_ETC}.
+	# Each entry must be a directory portconf itself stages into -- never a
+	# PARENT of one.  ${DEP_PATH%/*} in particular resolves to the shared
+	# temp directory whenever DEP_PATH is relocated (every test tier does
+	# this), which made the sweep inspect, and refuse to run because of,
+	# artifacts belonging to entirely unrelated trees.  Dep-cache quarantine
+	# targets are strictly below ${DEP_PATH}, so the root itself suffices.
 	sweep_roots=(
 		"${PORT_ETC}"
 		"${WORLD%/*}"
-		"${DEP_PATH%/*}"
+		"${DEP_PATH}"
 		"${BRDIR}"
 	)
 	if [[ -n "${PORTDIR_OVERLAY}" ]];then
@@ -3138,6 +3144,15 @@ regen_world(){
 	fi
 	seed="$(_mktemp_near "${WORLD}")" || return 1
 	printf '%s\n' "${installed}" > "${seed}"
+	# _txn_replace renames the staged file into place as-is, so the seed must
+	# already carry the target's access policy.  Without this the live world
+	# file spends the whole emerge window at mktemp's 0600, and anything
+	# reading it as a non-root user during that window -- emerge -pc under
+	# FEATURES=userpriv, a concurrent tool -- cannot open it.
+	if [[ -e "${WORLD}" ]];then
+		cp --attributes-only --preserve=mode,ownership -- "${WORLD}" "${seed}" || return 1
+		cp --attributes-only --preserve=xattr -- "${WORLD}" "${seed}" 2>/dev/null || true
+	fi
 	_txn_begin || return 1
 	_txn_replace "${seed}" "${WORLD}" || return 1
 	emerge_log="$(_mktemp)"

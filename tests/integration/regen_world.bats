@@ -33,6 +33,8 @@ setup() {
 teardown() {
 	teardown_test_portage
 	[[ -n "${TEST_ROOT:-}" ]] && rm -rf "${TEST_ROOT}"
+	[[ -n "${WORLD_MODE_LOG:-}" ]] && rm -f "${WORLD_MODE_LOG}"
+	return 0
 }
 
 # Dispatching qlist stub.  Strips -* flags from argv to find atom args.
@@ -72,6 +74,13 @@ qlist() {
 #                         early without prompting)
 #   -Own ...            → never called in these tests (we pipe "No")
 emerge() {
+	# Record the live world file's mode on every call so a test can assert
+	# the access policy holds for the whole emerge window.  Written as an `if`
+	# rather than an `&&` chain: a false condition on the first statement of
+	# the function would otherwise return non-zero into an errexit context.
+	if [[ -n "${WORLD_MODE_LOG:-}" && -e "${WORLD}" ]];then
+		stat -c '%a' "${WORLD}" >> "${WORLD_MODE_LOG}"
+	fi
 	case "$*" in
 		*'-eopd'*)
 			[[ "${EMERGE_FAIL:-}" == "eopd" ]] && return 1
@@ -220,4 +229,25 @@ emerge() {
 	run regen_world
 	[ "$status" -ne 0 ]
 	[[ "$(cat "${WORLD}")" == "${before}" ]]
+}
+
+@test "regen_world: world keeps its access mode for the whole emerge window" {
+	# The staged seed is installed by _txn_replace, which renames as-is.
+	# Without the seed carrying the target's metadata the live world file
+	# sits at mktemp's 0600 for every emerge invocation, so anything reading
+	# it as a non-root user during that window cannot open it.
+	local before mode
+	chmod 0644 "${WORLD}"
+	before="$(stat -c '%a' "${WORLD}")"
+	WORLD_MODE_LOG="$(mktemp)"
+	QLIST_INSTALLED='app-misc/foo'
+	EMERGE_PRETEND=""
+	regen_world <<< $'No\nNo\nNo\nNo\n'
+	# Every recorded mode must match the original, and at least one emerge
+	# call must have happened (otherwise the assertion is vacuous).
+	[[ -s "${WORLD_MODE_LOG}" ]]
+	while IFS= read -r mode;do
+		[[ "${mode}" == "${before}" ]]
+	done < "${WORLD_MODE_LOG}"
+	[[ "$(stat -c '%a' "${WORLD}")" == "${before}" ]]
 }

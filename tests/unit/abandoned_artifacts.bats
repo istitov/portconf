@@ -19,6 +19,8 @@ teardown() {
 	fi
 	teardown_test_portage
 	rm -rf "${TEST_BRDIR}"
+	[[ -n "${TEST_SWEEP_ROOT:-}" ]] && rm -rf "${TEST_SWEEP_ROOT}"
+	return 0
 }
 
 _age_artifact() {
@@ -102,4 +104,26 @@ _age_artifact() {
 	[[ "${output}" == *'recoverable abandoned transaction holder'* ]]
 	[[ "$(cat "${holder}/original")" == 'original' ]]
 	[[ "$(cat "${stage}")" == 'replacement' ]]
+}
+
+@test "abandoned artifacts: a sibling of a sweep root is left alone" {
+	# Every sweep root must be a directory portconf itself stages into, never
+	# a PARENT of one.  DEP_PATH is the case that bites: relocating it (which
+	# every test tier does) puts its parent in a shared temp directory, so a
+	# parent-scoped sweep inspected — and refused to run because of —
+	# artifacts belonging to entirely unrelated trees.
+	local root holder
+	TEST_SWEEP_ROOT="$(mktemp -d)"
+	root="${TEST_SWEEP_ROOT}"
+	mkdir -p "${root}/cache/dep"
+	DEP_PATH="${root}/cache/dep"
+	holder="${root}/cache/.unrelated.portconf-txn.A1b2C3"
+	mkdir "${holder}"
+	printf 'someone else\n' > "${holder}/original"
+	_age_artifact "${holder}"
+
+	run _sweep_abandoned_artifacts
+
+	[ "${status}" -eq 0 ]
+	[[ -f "${holder}/original" ]]
 }
