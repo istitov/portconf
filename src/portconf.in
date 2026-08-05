@@ -986,14 +986,14 @@ restore(){
 	# Build the inventory explicitly instead of enabling nullglob, which leaked
 	# through every early return and changed later dispatch handlers' glob tests.
 	mapfile -t archives < <(
-		find "${1}" -maxdepth 1 -type f -name "${2}_*.tar.bz2" -print 2>/dev/null | sort
+		find "${1}" -maxdepth 1 \( -type f -o -type l \) -name "${2}_*.tar.bz2" -printf '%f\n' 2>/dev/null | sort
 	)
 	if (( ${#archives[@]} == 0 ));then
 		printf '%b\n' "${red}No backups${restore} found in ${contrast}${1}${restore}"
 		return 0
 	fi
 	for archive in "${archives[@]}";do
-		answer="${archive#"${1}"/"${2}"_}"
+		answer="${archive#"${2}"_}"
 		labels+=("${answer%.tar.bz2}")
 	done
 	if _action_is pretend;then
@@ -1018,7 +1018,7 @@ restore(){
 			break
 		done
 	fi
-	src="${1}/${2}_${answer}.tar.bz2"
+	src="${1%/}/${2}_${answer}.tar.bz2"
 	_restore_root=""
 	if ! _validate_restore_archive "${src}" "${kind}" "$2" "${target}";then
 		printf '%b\n' "${red}Backup ${answer} is unsafe, unreadable, or corrupt${restore}; nothing changed"

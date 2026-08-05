@@ -355,3 +355,44 @@ load 'test_helper'
 	[[ "$(stat -c %a "${PORT_ETC}/private/secret")" == '600' ]]
 	rm -rf "${TEST_ROOT}"
 }
+
+@test "etc_restore: force mode handles BRDIR with trailing slash" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf/"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage"
+	printf 'sys-apps/grep static\n' > "${TEST_ROOT}/staging/portage/package.use"
+	tar -jcf "${BRDIR}portage_24.01.01-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	_set_action_mode force
+
+	run etc_restore
+	[ "$status" -eq 0 ]
+	[[ "${output}" == *"Selecting newest backup: 24.01.01-12:00"* ]]
+	run cat "${PORT_ETC}/package.use"
+	assert_output --partial 'sys-apps/grep static'
+	rm -rf "${TEST_ROOT}"
+}
+
+@test "etc_restore: follows symlinked backups in BRDIR" {
+	load_portconf
+	make_test_portage
+	TEST_ROOT="$(mktemp -d)"
+	PORT_ETC="${TEST_ROOT}/etc/portage"
+	BRDIR="${TEST_ROOT}/var/lib/portconf/"
+	mkdir -p "${PORT_ETC}" "${BRDIR}" "${TEST_ROOT}/staging/portage" "${TEST_ROOT}/link-target"
+	printf 'sys-apps/grep static\n' > "${TEST_ROOT}/staging/portage/package.use"
+	mkdir -p "${TEST_ROOT}/link-target"
+	tar -jcf "${TEST_ROOT}/link-target/portage_24.02.02-12:00.tar.bz2" \
+		-C "${TEST_ROOT}/staging" portage
+	ln -s "${TEST_ROOT}/link-target/portage_24.02.02-12:00.tar.bz2" "${BRDIR}portage_24.02.02-12:00.tar.bz2"
+	_set_action_mode force
+
+	run etc_restore
+	[ "$status" -eq 0 ]
+	run cat "${PORT_ETC}/package.use"
+	assert_output --partial 'sys-apps/grep static'
+	rm -rf "${TEST_ROOT}"
+}
